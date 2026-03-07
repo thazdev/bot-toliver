@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique @db.VarChar(64)
+  password      String   @db.VarChar(255)
+  displayName   String   @map("display_name") @db.VarChar(128)
+  walletAddress String   @map("wallet_address") @db.VarChar(64)
+  tier          String   @default("admin") @db.VarChar(32)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model Token {
+  id                  BigInt    @id @default(autoincrement())
+  mintAddress         String    @unique @map("mint_address") @db.VarChar(64)
+  symbol              String    @default("") @db.VarChar(32)
+  name                String    @default("") @db.VarChar(128)
+  decimals            Int       @default(0)
+  supply              Decimal   @default(0) @db.Decimal(36, 0)
+  source              String    @default("unknown") @db.VarChar(20)
+  initialLiquiditySol Decimal   @default(0) @map("initial_liquidity_sol") @db.Decimal(18, 9)
+  initialPriceSol     Decimal   @default(0) @map("initial_price_sol") @db.Decimal(18, 12)
+  isMutable           Boolean   @default(false) @map("is_mutable")
+  hasFreezeAuthority  Boolean   @default(false) @map("has_freeze_authority")
+  metadataUri         String?   @map("metadata_uri") @db.Text
+  createdAt           DateTime? @map("created_at")
+  discoveredAt        DateTime? @default(now()) @map("discovered_at")
+
+  @@index([source], map: "idx_tokens_source")
+  @@index([discoveredAt], map: "idx_tokens_discovered")
+  @@map("tokens")
+}
+
+model Trade {
+  id                 BigInt   @id @default(autoincrement())
+  tokenMint          String   @map("token_mint") @db.VarChar(64)
+  direction          String   @db.VarChar(10)
+  status             String   @default("pending") @db.VarChar(20)
+  amountSol          Decimal  @default(0) @map("amount_sol") @db.Decimal(18, 9)
+  outputAmount       Decimal  @default(0) @map("output_amount") @db.Decimal(36, 0)
+  priceSol           Decimal  @default(0) @map("price_sol") @db.Decimal(18, 12)
+  priceImpactPercent Decimal  @default(0) @map("price_impact_percent") @db.Decimal(8, 4)
+  feeSol             Decimal  @default(0) @map("fee_sol") @db.Decimal(18, 9)
+  txSignature        String?  @map("tx_signature") @db.VarChar(128)
+  strategyId         String   @default("") @map("strategy_id") @db.VarChar(64)
+  dryRun             Boolean  @default(true) @map("dry_run")
+  errorMessage       String?  @map("error_message") @db.Text
+  executedAt         DateTime? @map("executed_at")
+
+  @@index([tokenMint], map: "idx_trades_token")
+  @@index([executedAt], map: "idx_trades_executed")
+  @@index([status], map: "idx_trades_status")
+  @@index([strategyId], map: "idx_trades_strategy")
+  @@map("trades")
+}
+
+model Position {
+  id                String   @id @db.VarChar(36)
+  tokenMint         String   @map("token_mint") @db.VarChar(64)
+  entryPriceSol     Decimal  @default(0) @map("entry_price_sol") @db.Decimal(18, 12)
+  exitPriceSol      Decimal? @map("exit_price_sol") @db.Decimal(18, 12)
+  currentPriceSol   Decimal  @default(0) @map("current_price_sol") @db.Decimal(18, 12)
+  amountSol         Decimal  @default(0) @map("amount_sol") @db.Decimal(18, 9)
+  tokenAmount       Decimal  @default(0) @map("token_amount") @db.Decimal(36, 0)
+  status            String   @default("open") @db.VarChar(20)
+  strategyId        String   @default("") @map("strategy_id") @db.VarChar(64)
+  stopLossPercent   Decimal  @default(0) @map("stop_loss_percent") @db.Decimal(6, 2)
+  takeProfitPercent Decimal  @default(0) @map("take_profit_percent") @db.Decimal(6, 2)
+  pnlSol            Decimal  @default(0) @map("pnl_sol") @db.Decimal(18, 9)
+  pnlPercent        Decimal  @default(0) @map("pnl_percent") @db.Decimal(8, 4)
+  openedAt          DateTime? @map("opened_at")
+  closedAt          DateTime? @map("closed_at")
+
+  @@index([tokenMint], map: "idx_positions_token")
+  @@index([status], map: "idx_positions_status")
+  @@index([strategyId], map: "idx_positions_strategy")
+  @@map("positions")
+}
+
+model Stat {
+  id            BigInt    @id @default(autoincrement())
+  totalTrades   Int       @default(0) @map("total_trades")
+  winCount      Int       @default(0) @map("win_count")
+  lossCount     Int       @default(0) @map("loss_count")
+  totalPnlSol   Decimal   @default(0) @map("total_pnl_sol") @db.Decimal(18, 9)
+  winRate       Decimal   @default(0) @map("win_rate") @db.Decimal(6, 4)
+  tokensScanned Int       @default(0) @map("tokens_scanned")
+  tradesBlocked Int       @default(0) @map("trades_blocked")
+  uptimeSeconds BigInt    @default(0) @map("uptime_seconds")
+  snapshotAt    DateTime? @default(now()) @map("snapshot_at")
+
+  @@index([snapshotAt], map: "idx_stats_snapshot")
+  @@map("stats")
+}

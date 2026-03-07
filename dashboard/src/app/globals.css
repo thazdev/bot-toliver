@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --surface: #0a0a0f;
+  --accent: #6366f1;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+body {
+  background: var(--surface);
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+@layer components {
+  .glass-card {
+    @apply rounded-glass border border-card-border;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+  }
+
+  .glow-green {
+    color: var(--success);
+    text-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+  }
+
+  .glow-red {
+    color: var(--danger);
+    text-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full;
+  }
+
+  .status-running {
+    @apply status-badge bg-success/20 text-success;
+  }
+
+  .status-halted {
+    @apply status-badge bg-danger/20 text-danger;
+  }
+
+  .status-dryrun {
+    @apply status-badge bg-warning/20 text-warning;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
