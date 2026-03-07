@@ -1,0 +1,41 @@
+{
+  "name": "solana-trading-bot",
+  "version": "1.0.0",
+  "description": "Production-grade Solana memecoin trading bot infrastructure",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "migrate": "tsx src/core/database/MigrationRunner.ts",
+    "lint": "eslint src/ --ext .ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.0",
+    "@solana/spl-token": "^0.4.9",
+    "axios": "^1.7.9",
+    "bn.js": "^5.2.1",
+    "bottleneck": "^2.19.5",
+    "bullmq": "^5.34.0",
+    "dotenv": "^16.4.7",
+    "ioredis": "^5.4.2",
+    "mysql2": "^3.12.0",
+    "node-cron": "^3.0.3",
+    "winston": "^3.17.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.6",
+    "@types/node": "^22.10.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/ws": "^8.5.13",
+    "eslint": "^9.16.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

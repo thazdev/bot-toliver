@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS positions (
+  id VARCHAR(36) PRIMARY KEY,
+  token_mint VARCHAR(64) NOT NULL,
+  entry_price_sol DECIMAL(18,12) NOT NULL DEFAULT 0,
+  exit_price_sol DECIMAL(18,12),
+  current_price_sol DECIMAL(18,12) NOT NULL DEFAULT 0,
+  amount_sol DECIMAL(18,9) NOT NULL DEFAULT 0,
+  token_amount DECIMAL(36,0) NOT NULL DEFAULT 0,
+  status ENUM('open','closed','partial') NOT NULL DEFAULT 'open',
+  strategy_id VARCHAR(64) NOT NULL DEFAULT '',
+  stop_loss_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+  take_profit_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+  pnl_sol DECIMAL(18,9) NOT NULL DEFAULT 0,
+  pnl_percent DECIMAL(8,4) NOT NULL DEFAULT 0,
+  opened_at DATETIME,
+  closed_at DATETIME,
+  INDEX idx_positions_token (token_mint),
+  INDEX idx_positions_status (status),
+  INDEX idx_positions_strategy (strategy_id)
+);

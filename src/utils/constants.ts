@@ -1,0 +1,24 @@
+export const RAYDIUM_AMM_V4 = '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8';
+export const PUMP_FUN_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+export const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+export const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+export const BOT_VERSION = '1.0.0';
+
+export const HEALTH_CHECK_INTERVAL_MS = 30_000;
+export const PRICE_CACHE_TTL_SECONDS = 60;
+export const POOL_CACHE_TTL_SECONDS = 10;
+export const STATS_SNAPSHOT_INTERVAL_CRON = '*/15 * * * *';
+
+export const WS_RECONNECT_BASE_MS = 500;
+export const WS_RECONNECT_MAX_MS = 30_000;
+
+export const TRADE_RETRY_ATTEMPTS = 3;
+export const TRADE_RETRY_DELAY_MS = 2000;
+
+export const DB_POOL_SIZE = 10;
+
+export const LARGE_TX_THRESHOLD_SOL = 10;
+
+export const QUEUE_RATE_LIMIT_WARNING_THRESHOLD = 100;

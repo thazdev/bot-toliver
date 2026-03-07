@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS trades (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  token_mint VARCHAR(64) NOT NULL,
+  direction ENUM('buy','sell') NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  amount_sol DECIMAL(18,9) NOT NULL DEFAULT 0,
+  output_amount DECIMAL(36,0) NOT NULL DEFAULT 0,
+  price_sol DECIMAL(18,12) NOT NULL DEFAULT 0,
+  price_impact_percent DECIMAL(8,4) NOT NULL DEFAULT 0,
+  fee_sol DECIMAL(18,9) NOT NULL DEFAULT 0,
+  tx_signature VARCHAR(128),
+  strategy_id VARCHAR(64) NOT NULL DEFAULT '',
+  dry_run BOOLEAN NOT NULL DEFAULT TRUE,
+  error_message TEXT,
+  executed_at DATETIME,
+  INDEX idx_trades_token (token_mint),
+  INDEX idx_trades_executed (executed_at),
+  INDEX idx_trades_status (status),
+  INDEX idx_trades_strategy (strategy_id)
+);
