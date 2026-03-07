@@ -37,6 +37,7 @@ export function loadConfig(): AppConfig {
       stopLossPercent: parseFloat(process.env.STOP_LOSS_PERCENT ?? '20'),
       takeProfitPercent: parseFloat(process.env.TAKE_PROFIT_PERCENT ?? '50'),
       maxDailyLossSol: parseFloat(process.env.MAX_DAILY_LOSS_SOL ?? '0.5'),
+      strategyTier: (process.env.STRATEGY_TIER as 'conservative' | 'balanced' | 'aggressive') ?? 'balanced',
     },
     bot: {
       logLevel: process.env.LOG_LEVEL ?? 'info',

@@ -1,4 +1,4 @@
-export type TokenSource = 'raydium' | 'pumpfun' | 'unknown';
+export type TokenSource = 'raydium' | 'raydium_clmm' | 'pumpfun' | 'unknown';
 
 export interface TokenInfo {
   mintAddress: string;

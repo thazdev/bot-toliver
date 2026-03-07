@@ -2,46 +2,44 @@ import { logger } from '../utils/logger.js';
 import { solToLamports } from '../utils/formatters.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
 import { JupiterClient } from './JupiterClient.js';
-import { TransactionBuilder } from './TransactionBuilder.js';
-import { TransactionSender } from './TransactionSender.js';
 import { SlippageManager } from './SlippageManager.js';
+import { RedisClient } from '../core/cache/RedisClient.js';
 import { TradeRepository } from '../core/database/repositories/TradeRepository.js';
 import { QueueManager } from '../core/queue/QueueManager.js';
 import { QueueName } from '../types/queue.types.js';
+import { TransactionManager } from '../trading/TransactionManager.js';
+import type { TransactionContext } from '../trading/TransactionManager.js';
 import type { TradeRequest, TradeResult } from '../types/trade.types.js';
 import type { AppConfig } from '../types/config.types.js';
 import type { AlertJobPayload } from '../types/queue.types.js';
 
-/**
- * Orchestrates the full trade lifecycle: quote, validate, execute, and record.
- * Consumes TRADE_EXECUTE queue jobs.
- */
+const BUY_LOCK_TTL_SEC = parseInt(process.env.BUY_LOCK_TTL_SEC ?? '30', 10);
+
+export interface ExecuteOptions {
+  positionId?: string;
+  isEmergency?: boolean;
+}
+
 export class TradeExecutor {
   private jupiterClient: JupiterClient;
-  private transactionSender: TransactionSender;
   private slippageManager: SlippageManager;
   private tradeRepository: TradeRepository;
   private connectionManager: ConnectionManager;
   private queueManager: QueueManager;
+  private transactionManager: TransactionManager;
   private config: AppConfig;
 
-  constructor(config: AppConfig, queueManager: QueueManager) {
+  constructor(config: AppConfig, queueManager: QueueManager, transactionManager: TransactionManager) {
     this.config = config;
     this.jupiterClient = new JupiterClient(config);
-    this.transactionSender = new TransactionSender();
     this.slippageManager = new SlippageManager(config);
     this.tradeRepository = new TradeRepository();
     this.connectionManager = ConnectionManager.getInstance();
     this.queueManager = queueManager;
+    this.transactionManager = transactionManager;
   }
 
-  /**
-   * Executes a trade request through the full lifecycle.
-   * @param tradeRequest - The trade to execute
-   * @param poolLiquidity - Current pool liquidity for slippage calculation
-   * @returns The trade result
-   */
-  async execute(tradeRequest: TradeRequest, poolLiquidity: number = 0): Promise<TradeResult> {
+  async execute(tradeRequest: TradeRequest, options?: ExecuteOptions): Promise<TradeResult> {
     const startTime = Date.now();
     logger.info('TradeExecutor: starting trade', {
       tokenMint: tradeRequest.tokenMint,
@@ -51,63 +49,25 @@ export class TradeExecutor {
     });
 
     try {
-      const slippageBps = poolLiquidity > 0
-        ? this.slippageManager.calculateSlippage(poolLiquidity, tradeRequest.amountSol)
-        : tradeRequest.slippageBps;
-
-      const amountLamports = solToLamports(tradeRequest.amountSol).toNumber();
-
-      const quote = tradeRequest.direction === 'buy'
-        ? await this.jupiterClient.getBuyQuote(tradeRequest.tokenMint, amountLamports, slippageBps)
-        : await this.jupiterClient.getSellQuote(tradeRequest.tokenMint, amountLamports, slippageBps);
-
-      const priceImpact = parseFloat(quote.priceImpactPct);
-
-      if (priceImpact > 10) {
-        logger.warn('TradeExecutor: high price impact, aborting', {
-          priceImpact,
-          tokenMint: tradeRequest.tokenMint,
-        });
-        const result = this.buildTradeResult(tradeRequest, null, 'cancelled', quote, 'Price impact too high');
-        await this.tradeRepository.insert(result);
-        return result;
+      if (tradeRequest.direction === 'buy') {
+        const blocked = await this.acquireBuyLock(tradeRequest.tokenMint);
+        if (blocked) {
+          logger.warn('TradeExecutor: duplicate_buy_prevented', {
+            tokenMint: tradeRequest.tokenMint,
+          });
+          const result = this.buildTradeResult(tradeRequest, null, 'cancelled', null, 'Duplicate buy prevented');
+          await this.tradeRepository.insert(result);
+          return result;
+        }
       }
 
-      if (tradeRequest.dryRun) {
-        logger.info('TradeExecutor: DRY RUN - would have executed trade', {
-          tokenMint: tradeRequest.tokenMint,
-          direction: tradeRequest.direction,
-          inAmount: quote.inAmount,
-          outAmount: quote.outAmount,
-          priceImpact,
-        });
-        const result = this.buildTradeResult(tradeRequest, null, 'confirmed', quote, null);
-        await this.tradeRepository.insert(result);
-        return result;
+      try {
+        return await this.executeInternal(tradeRequest, options, startTime);
+      } finally {
+        if (tradeRequest.direction === 'buy') {
+          await this.releaseBuyLock(tradeRequest.tokenMint);
+        }
       }
-
-      const wallet = this.connectionManager.getWallet();
-      const swapTx = await this.jupiterClient.executeSwap(quote, wallet.publicKey.toBase58());
-      const signedTx = TransactionBuilder.buildAndSign(swapTx, wallet);
-      const txSignature = await this.transactionSender.sendAndConfirm(signedTx);
-
-      const result = this.buildTradeResult(tradeRequest, txSignature, 'confirmed', quote, null);
-      await this.tradeRepository.insert(result);
-
-      await this.queueManager.addJob(QueueName.ALERT, 'trade-confirmed', {
-        level: 'trade',
-        message: `Trade ${tradeRequest.direction.toUpperCase()} confirmed: ${tradeRequest.amountSol} SOL on ${tradeRequest.tokenMint.slice(0, 8)}...`,
-        data: { txSignature, direction: tradeRequest.direction, amountSol: tradeRequest.amountSol },
-      } satisfies AlertJobPayload);
-
-      logger.info('TradeExecutor: trade completed', {
-        txSignature,
-        direction: tradeRequest.direction,
-        tokenMint: tradeRequest.tokenMint,
-        elapsedMs: Date.now() - startTime,
-      });
-
-      return result;
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error('TradeExecutor: trade failed', {
@@ -119,6 +79,101 @@ export class TradeExecutor {
       const result = this.buildTradeResult(tradeRequest, null, 'failed', null, errorMsg);
       await this.tradeRepository.insert(result);
       return result;
+    }
+  }
+
+  private async executeInternal(
+    tradeRequest: TradeRequest,
+    options: ExecuteOptions | undefined,
+    startTime: number,
+  ): Promise<TradeResult> {
+    const slippageBps = tradeRequest.slippageBps;
+
+    if (tradeRequest.dryRun) {
+      const amountLamports = solToLamports(tradeRequest.amountSol).toNumber();
+      const quote = tradeRequest.direction === 'buy'
+        ? await this.jupiterClient.getBuyQuote(tradeRequest.tokenMint, amountLamports, slippageBps)
+        : await this.jupiterClient.getSellQuote(tradeRequest.tokenMint, amountLamports, slippageBps);
+
+      const priceImpact = parseFloat(quote.priceImpactPct);
+      logger.info('TradeExecutor: DRY RUN - would have executed trade', {
+        tokenMint: tradeRequest.tokenMint,
+        direction: tradeRequest.direction,
+        inAmount: quote.inAmount,
+        outAmount: quote.outAmount,
+        priceImpact,
+      });
+
+      const result = this.buildTradeResult(tradeRequest, null, 'confirmed', quote, null);
+      await this.tradeRepository.insert(result);
+      return result;
+    }
+
+    const context: TransactionContext = {
+      positionId: options?.positionId ?? '',
+      type: tradeRequest.direction === 'buy' ? 'BUY' : 'SELL',
+      isEmergency: options?.isEmergency ?? false,
+    };
+
+    const txResult = await this.transactionManager.executeWithRetry(tradeRequest, context);
+
+    const quote = txResult.success
+      ? { inAmount: txResult.inAmount!, outAmount: txResult.outAmount!, priceImpactPct: txResult.priceImpactPct! }
+      : null;
+
+    const status = txResult.success ? 'confirmed' : 'failed';
+    const result = this.buildTradeResult(
+      tradeRequest,
+      txResult.signature ?? null,
+      status,
+      quote,
+      txResult.finalError ?? null,
+    );
+    await this.tradeRepository.insert(result);
+
+    if (txResult.success) {
+      await this.queueManager.addJob(QueueName.ALERT, 'trade-confirmed', {
+        level: 'trade',
+        message: `Trade ${tradeRequest.direction.toUpperCase()} confirmed: ${tradeRequest.amountSol} SOL on ${tradeRequest.tokenMint.slice(0, 8)}...`,
+        data: {
+          txSignature: txResult.signature,
+          direction: tradeRequest.direction,
+          amountSol: tradeRequest.amountSol,
+        },
+      } satisfies AlertJobPayload);
+
+      logger.info('TradeExecutor: trade completed', {
+        txSignature: txResult.signature,
+        direction: tradeRequest.direction,
+        tokenMint: tradeRequest.tokenMint,
+        elapsedMs: Date.now() - startTime,
+      });
+    }
+
+    return result;
+  }
+
+  private async acquireBuyLock(tokenMint: string): Promise<boolean> {
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      const buyLockKey = `buy_lock:${tokenMint}`;
+      const alreadyBuying = await redis.get(buyLockKey);
+      if (alreadyBuying) return true;
+      await redis.set(buyLockKey, '1', 'EX', BUY_LOCK_TTL_SEC);
+      return false;
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.error('TradeExecutor: Redis buy lock error — proceeding anyway', { error: errorMsg });
+      return false;
+    }
+  }
+
+  private async releaseBuyLock(tokenMint: string): Promise<void> {
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      await redis.del(`buy_lock:${tokenMint}`);
+    } catch {
+      // Non-critical: lock has TTL and will expire
     }
   }
 

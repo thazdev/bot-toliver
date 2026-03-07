@@ -1,4 +1,6 @@
-export type PositionStatus = 'open' | 'closed' | 'partial';
+import type { StopLossState } from './strategy.types.js';
+
+export type PositionStatus = 'open' | 'closed' | 'partial' | 'stuck' | 'closed_external';
 
 export interface Position {
   id: string;
@@ -15,4 +17,23 @@ export interface Position {
   pnlPercent: number;
   stopLoss: number;
   takeProfit: number;
+}
+
+export interface ExitTranche {
+  targetPercent: number;
+  sellPercent: number;
+  executed: boolean;
+  executedAt?: Date;
+}
+
+export interface EnhancedPosition extends Position {
+  peakPrice: number;
+  stopLossState: StopLossState;
+  trailingStopDelta: number;
+  currentStopPrice: number;
+  exitTranches: ExitTranche[];
+  remainingPercent: number;
+  originalAmountSol: number;
+  originalTokenAmount: number;
+  poolAddress: string;
 }

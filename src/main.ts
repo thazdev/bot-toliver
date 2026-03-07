@@ -31,6 +31,7 @@ import { TradeExecutor } from './execution/TradeExecutor.js';
 import { PositionManager } from './positions/PositionManager.js';
 import { PositionTracker } from './positions/PositionTracker.js';
 import { PriceMonitor } from './monitoring/PriceMonitor.js';
+import { BotHealthMonitor } from './monitoring/BotHealthMonitor.js';
 
 import { ExposureTracker } from './risk/ExposureTracker.js';
 import { CircuitBreaker } from './risk/CircuitBreaker.js';
@@ -38,9 +39,36 @@ import { RiskManager } from './risk/RiskManager.js';
 import { CapitalManager } from './capital/CapitalManager.js';
 
 import { StrategyRegistry } from './strategies/StrategyRegistry.js';
+import { EntryStrategy } from './strategies/EntryStrategy.js';
+import { MomentumStrategy } from './strategies/MomentumStrategy.js';
+import { LaunchStrategy } from './strategies/LaunchStrategy.js';
+import { ExitManager } from './strategies/ExitManager.js';
+import { StopLossManager } from './strategies/StopLossManager.js';
+import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
+import { getTierConfig } from './strategies/config.js';
 import { AlertService } from './alerts/AlertService.js';
 import { StatsTracker } from './stats/StatsTracker.js';
 import { StatsSnapshot } from './stats/StatsSnapshot.js';
+import { PositionSizer } from './capital/PositionSizer.js';
+import { RugDetector } from './analysis/RugDetector.js';
+import { ScamDetector } from './analysis/ScamDetector.js';
+import { LiquidityAnalyzer } from './analysis/LiquidityAnalyzer.js';
+import { HolderAnalyzer } from './analysis/HolderAnalyzer.js';
+import { HoneypotChecker } from './analysis/HoneypotChecker.js';
+import { SmartMoneyTracker } from './analysis/SmartMoneyTracker.js';
+import { WhaleMonitor } from './analysis/WhaleMonitor.js';
+import { MarketSentiment } from './analysis/MarketSentiment.js';
+import { TradingGuard } from './risk/TradingGuard.js';
+import { TrailingStopStrategy } from './strategies/TrailingStopStrategy.js';
+import { TradeFilterPipeline } from './strategies/TradeFilterPipeline.js';
+import { ExitDecisionEngine } from './trading/ExitDecisionEngine.js';
+import { TransactionManager } from './trading/TransactionManager.js';
+import { StateReconciler } from './trading/StateReconciler.js';
+import type { EnhancedPosition, ExitTranche } from './types/position.types.js';
+import type {
+  StrategyContext, HolderData, VolumeContext, SafetyData, SmartMoneyData,
+  WhaleActivityData, SentimentData, TokenSentimentData,
+} from './types/strategy.types.js';
 
 let listeners: BaseListener[] = [];
 let queueManager: QueueManager;
@@ -48,6 +76,8 @@ let workerManager: WorkerManager;
 let webSocketManager: WebSocketManager;
 let connectionManager: ConnectionManager;
 let statsSnapshot: StatsSnapshot;
+let botHealthMonitor: BotHealthMonitor;
+let tradingGuard: TradingGuard;
 
 async function main(): Promise<void> {
   logger.info(`Solana Trading Bot v${BOT_VERSION} starting...`);
@@ -93,38 +123,261 @@ async function main(): Promise<void> {
   const circuitBreaker = new CircuitBreaker(config, queueManager);
   const riskManager = new RiskManager(circuitBreaker, exposureTracker, positionManager, config);
   const capitalManager = new CapitalManager(config);
-  const tradeExecutor = new TradeExecutor(config, queueManager);
+  const positionSizer = new PositionSizer(config, exposureTracker);
+
+  tradingGuard = new TradingGuard();
+  const transactionManager = new TransactionManager(
+    config,
+    (tokenMint: string) => tradingGuard.recordTokenFailure(tokenMint),
+  );
+  const tradeExecutor = new TradeExecutor(config, queueManager, transactionManager);
+
   const positionTracker = new PositionTracker(positionManager, priceMonitor, queueManager, config);
   const strategyRegistry = new StrategyRegistry();
   const alertService = new AlertService(config);
   const statsTracker = new StatsTracker();
 
+  const tier = config.trading.strategyTier;
+  const entryStrategy = new EntryStrategy(tier);
+  const momentumStrategy = new MomentumStrategy(tier);
+  const launchStrategy = new LaunchStrategy(tier);
+  strategyRegistry.register(entryStrategy);
+  strategyRegistry.register(momentumStrategy);
+  strategyRegistry.register(launchStrategy);
+
+  const exitManager = new ExitManager(tier);
+  const stopLossManager = new StopLossManager(tier);
+  const multiStageProfitTaker = new MultiStageProfitTaker(tier);
+
+  const rugDetector = new RugDetector();
+  const scamDetector = new ScamDetector();
+  const liquidityAnalyzer = new LiquidityAnalyzer(tier);
+  const holderAnalyzer = new HolderAnalyzer(tier);
+  const honeypotChecker = new HoneypotChecker(tier);
+  const smartMoneyTracker = new SmartMoneyTracker(tier);
+  const whaleMonitor = new WhaleMonitor(tier);
+  const marketSentiment = new MarketSentiment(tier);
+  const trailingStopStrategy = new TrailingStopStrategy(tier);
+  const tradeFilterPipeline = new TradeFilterPipeline(tier);
+  const exitDecisionEngine = new ExitDecisionEngine(tradeExecutor, queueManager);
+
+  smartMoneyTracker.recalculateAllScores();
+
+  // State reconciliation — before any new trades
+  const stateReconciler = new StateReconciler();
+  const reconciliation = await stateReconciler.reconcile();
+
+  // Check for stuck positions from previous runs
+  const stuckPositionKeys = await TransactionManager.getStuckPositionKeys();
+  if (stuckPositionKeys.length > 0) {
+    logger.error('CRITICAL: Found stuck positions from previous run — human intervention required', {
+      count: stuckPositionKeys.length,
+      keys: stuckPositionKeys,
+    });
+  }
+
+  // Health monitor
+  botHealthMonitor = BotHealthMonitor.initialize(tradingGuard);
+  botHealthMonitor.start();
+
+  logger.info('Strategies and analyzers initialized', {
+    tier,
+    strategies: [entryStrategy.name, momentumStrategy.name, launchStrategy.name],
+    modules: [
+      'ExitManager', 'StopLossManager', 'MultiStageProfitTaker', 'TrailingStopStrategy',
+      'RugDetector', 'ScamDetector', 'LiquidityAnalyzer', 'HolderAnalyzer',
+      'HoneypotChecker', 'SmartMoneyTracker', 'WhaleMonitor', 'MarketSentiment',
+      'TradingGuard', 'TradeFilterPipeline', 'ExitDecisionEngine',
+    ],
+  });
+
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
+    BotHealthMonitor.recordEvent();
     const payload = job.data as TokenScanJobPayload;
     const tokenInfo = await tokenScanner.processToken(payload);
     if (tokenInfo) {
       statsTracker.incrementTokensScanned();
       const pool = await poolScanner.scanForPool(tokenInfo.mintAddress);
       if (pool) {
-        const context = {
+        const tokenAgeSec = (Date.now() - tokenInfo.createdAt.getTime()) / 1000;
+        const defaultHolderData: HolderData = {
+          holderCount: 0,
+          topHolderPercent: 0,
+          top5HolderPercent: 0,
+          holderGrowthRate: 0,
+          holdersDecreasing: false,
+        };
+        const defaultVolumeContext: VolumeContext = {
+          volume1min: 0,
+          volume5minAvg: 0,
+          buyTxLast60s: 0,
+          sellTxLast20: 0,
+          buyTxLast20: 0,
+          volumeStillActive: false,
+          sellVolumeRatio: 0,
+          largestSellPercent: 0,
+          volumePrev60s: 0,
+          txnsPerMinute: 0,
+          uniqueWalletsPerVolume: 0,
+          avgTradeSize: 0,
+          tradeSizeStdDev: 0,
+          buyRatio: 0.5,
+          tradeTimeDistributionScore: 0,
+          selfTradingDetected: false,
+          volumeDropPercent60s: 0,
+        };
+        const defaultSafetyData: SafetyData = {
+          mintAuthorityDisabled: !tokenInfo.isMutable,
+          freezeAuthorityAbsent: !tokenInfo.hasFreezable,
+          isBlacklisted: false,
+          rugScore: 70,
+          devWalletSelling: false,
+          mintAuthorityReEnabled: false,
+          liquidityDropPercent60s: 0,
+          liquidityDropPercent10s: 0,
+          txFailureRate30s: 0,
+          freezeAuthority: null,
+          mintAuthority: null,
+          sellTxFailureRate: 0,
+          sellsFromSingleWallet: false,
+          noSuccessfulSells10min: false,
+          buyTaxPercent: 0,
+          sellTaxPercent: 0,
+          bundleDetected: false,
+          honeypotSimulationPassed: true,
+        };
+        const defaultSmartMoneyData: SmartMoneyData = {
+          smartMoneyHolding: false,
+          smartMoneyScore: 0,
+          tier1WalletsBuying: 0,
+          tier2WalletsBuying: 0,
+          smartWalletSellingPercent: 0,
+          smartWalletFullExit: false,
+        };
+        const defaultWhaleData: WhaleActivityData = {
+          whaleBuysLast5min: 0,
+          whaleDistinctBuyers5min: 0,
+          whaleSellsLast5min: 0,
+          whaleDistinctSellers5min: 0,
+          largestWhaleBuySol: 0,
+          whaleFirstBuyerSelling: false,
+          whaleWashTradeDetected: false,
+          whaleConfidenceScore: 0,
+        };
+        const defaultSentimentData: SentimentData = {
+          sentimentScore: 50,
+          sentimentRegime: 'neutral',
+          newTokenRateVsAvg: 1,
+          avgPoolSizeVsAvg: 1,
+          rugRateToday: 0,
+          solTransferVolumeSpike: false,
+          newWalletCreationRate: 0,
+          dexVsCexRatio: 0,
+          avgTxFee: 0,
+          failedTxRate: 0,
+        };
+        const defaultTokenSentiment: TokenSentimentData = {
+          holderCountVelocity: 0,
+          txFrequency: 0,
+          avgBuySizeTrend: 0,
+          sellSizeDistribution: 'mixed',
+          returnBuyerRate: 0,
+        };
+
+        const context: StrategyContext = {
           tokenInfo,
           poolInfo: pool,
           currentPrice: pool.price,
           liquidity: pool.liquidity,
-          volume: 0,
+          liquidityUsd: pool.liquidity * pool.price,
+          volume: pool.volume24h,
           timestamp: Date.now(),
+          tokenAgeSec,
+          priceChangeFromLaunch: tokenInfo.initialPrice > 0
+            ? ((pool.price - tokenInfo.initialPrice) / tokenInfo.initialPrice) * 100
+            : 0,
+          priceChangePercent5min: 0,
+          priceStdDev30min: 0,
+          holderData: defaultHolderData,
+          volumeContext: defaultVolumeContext,
+          safetyData: defaultSafetyData,
+          smartMoneyData: defaultSmartMoneyData,
+          whaleData: defaultWhaleData,
+          sentimentData: defaultSentimentData,
+          tokenSentiment: defaultTokenSentiment,
+          priceSamples: [],
+          previouslyTraded: false,
+          priceDropFromPeak: 0,
+          poolInitialSol: tokenInfo.initialLiquidity,
+          marketRegime: riskManager.getMarketRegime(),
+          solPriceChange24h: 0,
+
+          price60sAgo: 0,
+          priceRising: false,
+          uniqueBuyers5min: 0,
+          buySellRatio5min: 0.5,
+          liquidityStable: true,
+          tokenSource: 'unknown',
+          pumpfunMarketCap: 0,
+          pumpfunGraduated: false,
+          pumpfunCreationRatePerHour: 0,
+          consecutiveLosses: 0,
+          dailyLossPercent: 0,
+          solanaTps: 0,
+          rpcErrorRate5min: 0,
+          gasMultiplier: 1,
+          hotWalletBalance: 1,
+          jupiterAvailable: true,
+          websocketConnected: true,
+          databaseHealthy: true,
+          redisConnected: true,
+          btcPriceChange1h: 0,
+          newTokensPerHour: 0,
+          winRateLast20: 50,
+          knownExploitActive: false,
+          flashloanDetected: false,
         };
+
+        const filterOutcome = await tradeFilterPipeline.runPipeline(context);
+        if (!filterOutcome.passed) {
+          logger.debug('TradeFilterPipeline rejected token', {
+            token: tokenInfo.mintAddress,
+            reason: filterOutcome.rejectionReason,
+            durationMs: filterOutcome.totalDurationMs,
+          });
+          return;
+        }
+
+        const guardStatus = tradingGuard.evaluateToken(tokenInfo.mintAddress, context);
+        if (!guardStatus.canTrade) {
+          logger.info('TradingGuard blocked trade', {
+            token: tokenInfo.mintAddress,
+            reason: guardStatus.reason,
+          });
+          return;
+        }
+
+        if (guardStatus.softRestriction) {
+          logger.debug('TradingGuard soft restriction active', {
+            reason: guardStatus.reason,
+            sizeMultiplier: guardStatus.positionSizeMultiplier,
+          });
+        }
 
         const results = await strategyRegistry.evaluateAll(context);
         const buySignal = strategyRegistry.getBestBuySignal(results);
 
         if (buySignal && buySignal.confidence > 0) {
+          const sizeSol = positionSizer.calculatePositionSize(buySignal.confidence);
+          const baseSize = sizeSol > 0 ? sizeSol : buySignal.suggestedSizeSol;
+          const finalSize = baseSize * guardStatus.positionSizeMultiplier;
+
           const riskCheck = await riskManager.preTradeCheck({
             tokenMint: tokenInfo.mintAddress,
             direction: 'buy',
-            amountSol: buySignal.suggestedSizeSol,
+            amountSol: finalSize,
             slippageBps: config.trading.defaultSlippageBps,
-            strategyId: 'auto',
+            strategyId: buySignal.triggerType ?? 'auto',
             dryRun: config.bot.dryRun,
           });
 
@@ -133,9 +386,9 @@ async function main(): Promise<void> {
               tradeRequest: {
                 tokenMint: tokenInfo.mintAddress,
                 direction: 'buy',
-                amountSol: buySignal.suggestedSizeSol,
+                amountSol: finalSize,
                 slippageBps: config.trading.defaultSlippageBps,
-                strategyId: 'auto',
+                strategyId: buySignal.triggerType ?? 'auto',
                 dryRun: config.bot.dryRun,
               },
             } satisfies TradeExecuteJobPayload);
@@ -158,18 +411,52 @@ async function main(): Promise<void> {
       return;
     }
 
-    const result = await tradeExecutor.execute(payload.tradeRequest);
+    let executePositionId: string | undefined;
+    if (payload.tradeRequest.direction === 'sell') {
+      const sellPositions = positionManager.getOpenPositions()
+        .filter((p) => p.tokenMint === payload.tradeRequest.tokenMint);
+      if (sellPositions.length > 0) {
+        executePositionId = sellPositions[0].id;
+      }
+    }
+
+    const result = await tradeExecutor.execute(payload.tradeRequest, {
+      positionId: executePositionId,
+    });
 
     if (result.status === 'confirmed' && payload.tradeRequest.direction === 'buy') {
+      const entryPrice = result.inputAmount > 0 ? result.outputAmount / result.inputAmount : 0;
       const position = await positionManager.openPosition(
         payload.tradeRequest.tokenMint,
-        result.inputAmount > 0 ? result.outputAmount / result.inputAmount : 0,
+        entryPrice,
         payload.tradeRequest.amountSol,
         result.outputAmount,
         payload.tradeRequest.strategyId,
       );
       exposureTracker.addExposure(payload.tradeRequest.amountSol);
       capitalManager.allocateCapital(payload.tradeRequest.amountSol);
+
+      const exitCfg = getTierConfig(config.trading.strategyTier).exit;
+      const exitTranches: ExitTranche[] = [
+        { targetPercent: exitCfg.tp1.gainPercent, sellPercent: exitCfg.tp1.sellPercent, executed: false },
+        { targetPercent: exitCfg.tp2.gainPercent, sellPercent: exitCfg.tp2.sellPercent, executed: false },
+        { targetPercent: exitCfg.tp3.gainPercent, sellPercent: exitCfg.tp3.sellPercent, executed: false },
+      ];
+
+      const enhancedPos: EnhancedPosition = {
+        ...position,
+        peakPrice: entryPrice,
+        stopLossState: 'WATCHING',
+        trailingStopDelta: getTierConfig(config.trading.strategyTier).stopLoss.trailingStopDelta,
+        currentStopPrice: entryPrice * (1 - getTierConfig(config.trading.strategyTier).stopLoss.hardStopPercent / 100),
+        exitTranches,
+        remainingPercent: 100,
+        originalAmountSol: payload.tradeRequest.amountSol,
+        originalTokenAmount: result.outputAmount,
+        poolAddress: '',
+      };
+
+      stopLossManager.initializePosition(enhancedPos);
 
       await queueManager.addJob(QueueName.POSITION_MONITOR, 'monitor', {
         positionId: position.id,
@@ -181,14 +468,27 @@ async function main(): Promise<void> {
       const positions = positionManager.getOpenPositions()
         .filter((p) => p.tokenMint === payload.tradeRequest.tokenMint);
       for (const pos of positions) {
-        await positionManager.closePosition(pos.id, result.outputAmount / result.inputAmount);
+        const exitPrice = result.inputAmount > 0 ? result.outputAmount / result.inputAmount : 0;
+        const closedPos = await positionManager.closePosition(pos.id, exitPrice);
         exposureTracker.removeExposure(pos.amountSol);
         capitalManager.releaseCapital(pos.amountSol);
-      }
-    }
+        stopLossManager.removePosition(pos.id);
+        riskManager.recordTokenExit(pos.tokenMint);
 
-    const won = result.status === 'confirmed' && payload.tradeRequest.direction === 'sell';
-    statsTracker.incrementTrades(won, 0);
+        const won = closedPos.pnlSol > 0;
+        positionSizer.recordTradeResult(won);
+        if (closedPos.pnlSol < 0) {
+          riskManager.recordRealizedLoss(Math.abs(closedPos.pnlSol));
+        }
+        riskManager.updatePortfolioValue(
+          exposureTracker.getAvailableCapital() + exposureTracker.getTotalExposure(),
+        );
+
+        statsTracker.incrementTrades(won, closedPos.pnlSol);
+      }
+    } else if (result.status === 'confirmed' && payload.tradeRequest.direction === 'buy') {
+      statsTracker.incrementTrades(false, 0);
+    }
   }, 1);
 
   workerManager.registerWorker(QueueName.POSITION_MONITOR, async (_job) => {
@@ -219,12 +519,20 @@ async function main(): Promise<void> {
   statsSnapshot = new StatsSnapshot(statsTracker);
   statsSnapshot.start();
 
-  logger.info(`Bot initialized and listening`, {
+  logger.info(`Bot iniciado — capital mode: SMALL (${config.trading.totalCapitalSol} SOL), reconciliação: ${reconciliation.totalChecked} posições verificadas`, {
     version: BOT_VERSION,
     timestamp: new Date().toISOString(),
     strategies: strategyRegistry.getStrategyCount(),
     openPositions: positionManager.getOpenPositions().length,
     dryRun: config.bot.dryRun,
+    reconciliation: {
+      ok: reconciliation.ok,
+      closedExternally: reconciliation.closedExternally,
+      partialReconciled: reconciliation.partialReconciled,
+      errors: reconciliation.errors,
+    },
+    stuckPositions: stuckPositionKeys.length,
+    healthMonitor: 'active',
   });
 }
 
@@ -234,6 +542,14 @@ async function shutdown(signal: string): Promise<void> {
   try {
     for (const listener of listeners) {
       await listener.stop();
+    }
+
+    if (botHealthMonitor) {
+      botHealthMonitor.stop();
+    }
+
+    if (tradingGuard) {
+      tradingGuard.destroy();
     }
 
     if (statsSnapshot) {

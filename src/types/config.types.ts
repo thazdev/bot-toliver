@@ -1,3 +1,5 @@
+import type { StrategyTier } from './strategy.types.js';
+
 export interface SolanaConfig {
   heliusRpcUrl: string;
   heliusWsUrl: string;
@@ -31,6 +33,7 @@ export interface TradingConfig {
   stopLossPercent: number;
   takeProfitPercent: number;
   maxDailyLossSol: number;
+  strategyTier: StrategyTier;
 }
 
 export interface BotBehaviorConfig {
