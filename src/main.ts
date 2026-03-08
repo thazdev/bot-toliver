@@ -211,6 +211,7 @@ async function main(): Promise<void> {
   let lastPipelineSummaryAt = 0;
 
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
+    logger.info('TOKEN_SCAN: job recebido', { jobId: job.id, jobName: job.name });
     try {
       if (!(await isBotEnabled())) {
         if (Date.now() - lastBotDisabledLogAt > 60_000) {

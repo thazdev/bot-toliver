@@ -45,7 +45,10 @@ export abstract class BaseListener {
         case 'TOKEN_DETECTED': {
           const d = event.data;
           if (!d.mintAddress || d.mintAddress.length < 32) {
-            logger.debug('BaseListener: ignorando TOKEN_DETECTED sem mint válido');
+            logger.info('BaseListener: TOKEN_DETECTED ignorado — mint vazio ou inválido', {
+              source: this.name,
+              mintLen: d.mintAddress?.length ?? 0,
+            });
             break;
           }
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'token-detected', {
@@ -57,12 +60,16 @@ export abstract class BaseListener {
             source: this.name,
             detectedAt: event.timestamp,
           } satisfies TokenScanJobPayload);
+          logger.info('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: 'TOKEN_DETECTED' });
           break;
         }
         case 'POOL_CREATED': {
           const d = event.data as import('../types/pool.types.js').PoolInfo;
           if (!d.tokenMint || d.tokenMint.length < 32) {
-            logger.debug('BaseListener: ignorando POOL_CREATED sem tokenMint válido', { poolAddress: d.poolAddress?.slice(0, 8) });
+            logger.info('BaseListener: POOL_CREATED ignorado — tokenMint vazio ou inválido', {
+              source: this.name,
+              tokenMintLen: d.tokenMint?.length ?? 0,
+            });
             break;
           }
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'pool-created', {
@@ -74,6 +81,7 @@ export abstract class BaseListener {
             source: this.name,
             detectedAt: event.timestamp,
           } satisfies TokenScanJobPayload);
+          logger.info('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: event.type });
           break;
         }
         default:
