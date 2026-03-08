@@ -1,6 +1,7 @@
 import { PublicKey, type Logs } from '@solana/web3.js';
 import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
+import { isBotEnabled } from '../config/BotEnabledResolver.js';
 import { logger } from '../utils/logger.js';
 import { RAYDIUM_AMM_V4, PUMP_FUN_PROGRAM, WSOL_MINT } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
@@ -37,7 +38,7 @@ export class LiquidityListener extends BaseListener {
           pubkey,
           (logs: Logs) => {
             if (!this.isActive) return;
-            this.processLiquidityLogs(program.name, logs);
+            void this.processLiquidityLogs(program.name, logs);
           },
           'confirmed',
         );
@@ -50,7 +51,8 @@ export class LiquidityListener extends BaseListener {
     }
   }
 
-  private processLiquidityLogs(programName: string, logs: Logs): void {
+  private async processLiquidityLogs(programName: string, logs: Logs): Promise<void> {
+    if (!(await isBotEnabled())) return;
     const logMessages = logs.logs;
     const signature = logs.signature;
 

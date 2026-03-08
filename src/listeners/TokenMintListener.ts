@@ -1,6 +1,7 @@
 import { PublicKey, type Logs } from '@solana/web3.js';
 import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
+import { isBotEnabled } from '../config/BotEnabledResolver.js';
 import { logger } from '../utils/logger.js';
 import { TOKEN_PROGRAM_ID } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
@@ -31,7 +32,7 @@ export class TokenMintListener extends BaseListener {
         tokenProgramId,
         (logs: Logs) => {
           if (!this.isActive) return;
-          this.processTokenLogs(logs);
+          void this.processTokenLogs(logs);
         },
         'confirmed',
       );
@@ -42,7 +43,8 @@ export class TokenMintListener extends BaseListener {
     }
   }
 
-  private processTokenLogs(logs: Logs): void {
+  private async processTokenLogs(logs: Logs): Promise<void> {
+    if (!(await isBotEnabled())) return;
     const logMessages = logs.logs;
     const signature = logs.signature;
 

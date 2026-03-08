@@ -2,6 +2,7 @@ import { PublicKey } from '@solana/web3.js';
 import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
 import { BotHealthMonitor } from '../monitoring/BotHealthMonitor.js';
+import { isBotEnabled } from '../config/BotEnabledResolver.js';
 import { logger } from '../utils/logger.js';
 import { RAYDIUM_AMM_V4, PUMP_FUN_PROGRAM } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
@@ -53,6 +54,7 @@ export class PollingFallbackListener extends BaseListener {
 
   private async poll(): Promise<void> {
     if (!this.isActive) return;
+    if (!(await isBotEnabled())) return;
 
     let totalChecked = 0;
     const programs = [

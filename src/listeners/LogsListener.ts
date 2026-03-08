@@ -2,6 +2,7 @@ import { PublicKey, type Logs } from '@solana/web3.js';
 import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
 import { BotHealthMonitor } from '../monitoring/BotHealthMonitor.js';
+import { isBotEnabled } from '../config/BotEnabledResolver.js';
 import { logger } from '../utils/logger.js';
 import {
   RAYDIUM_AMM_V4,
@@ -49,7 +50,7 @@ export class LogsListener extends BaseListener {
           pubkey,
           (logs: Logs) => {
             if (!this.isActive) return;
-            this.processLogs(program.name, logs);
+            void this.processLogs(program.name, logs);
           },
           commitment,
         );
@@ -65,7 +66,8 @@ export class LogsListener extends BaseListener {
     }
   }
 
-  private processLogs(programName: string, logs: Logs): void {
+  private async processLogs(programName: string, logs: Logs): Promise<void> {
+    if (!(await isBotEnabled())) return;
     BotHealthMonitor.recordEvent();
     this.logBatchCount++;
     const now = Date.now();
@@ -83,9 +85,9 @@ export class LogsListener extends BaseListener {
       const processStartMs = Date.now();
 
       if (programName.includes('Raydium')) {
-        this.processRaydiumLogs(programName, logMessages, signature, processStartMs);
+        await this.processRaydiumLogs(programName, logMessages, signature, processStartMs);
       } else if (programName.includes('Pump')) {
-        this.processPumpFunLogs(logMessages, signature, processStartMs);
+        await this.processPumpFunLogs(logMessages, signature, processStartMs);
       }
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -96,12 +98,12 @@ export class LogsListener extends BaseListener {
     }
   }
 
-  private processRaydiumLogs(
+  private async processRaydiumLogs(
     programName: string,
     logMessages: string[],
     signature: string,
     processStartMs: number,
-  ): void {
+  ): Promise<void> {
     const hasInitialize2 = logMessages.some(
       (log) => log.includes('initialize2') || log.includes('Initialize2'),
     );
@@ -111,14 +113,14 @@ export class LogsListener extends BaseListener {
     const discovered = this.extractTokenFromLogs(logMessages);
     const source = programName.includes('CLMM') ? 'raydium_clmm' : 'raydium';
 
-    this.fetchBlockTimeAndEmit(signature, discovered, source, processStartMs);
+    await this.fetchBlockTimeAndEmit(signature, discovered, source, processStartMs);
   }
 
-  private processPumpFunLogs(
+  private async processPumpFunLogs(
     logMessages: string[],
     signature: string,
     processStartMs: number,
-  ): void {
+  ): Promise<void> {
     const pumpProgramPrefix = `Program ${PUMP_FUN_PROGRAM}`;
     const isPumpFunInvocation = logMessages.some((log) => log.startsWith(pumpProgramPrefix));
     if (!isPumpFunInvocation) return;
@@ -133,7 +135,7 @@ export class LogsListener extends BaseListener {
 
     const discovered = this.extractTokenFromLogs(logMessages);
 
-    this.fetchBlockTimeAndEmit(signature, discovered, 'pumpfun', processStartMs);
+    await this.fetchBlockTimeAndEmit(signature, discovered, 'pumpfun', processStartMs);
   }
 
   private extractTokenFromLogs(logMessages: string[]): Partial<DiscoveredToken> {

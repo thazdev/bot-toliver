@@ -1,6 +1,7 @@
 import { PublicKey } from '@solana/web3.js';
 import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
+import { isBotEnabled } from '../config/BotEnabledResolver.js';
 import { logger } from '../utils/logger.js';
 import { RAYDIUM_AMM_V4, PUMP_FUN_PROGRAM } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
@@ -37,7 +38,7 @@ export class ProgramAccountListener extends BaseListener {
           pubkey,
           (accountInfo) => {
             if (!this.isActive) return;
-            this.processAccountChange(program.name, accountInfo);
+            void this.processAccountChange(program.name, accountInfo);
           },
           'confirmed',
         );
@@ -54,7 +55,8 @@ export class ProgramAccountListener extends BaseListener {
     }
   }
 
-  private processAccountChange(programName: string, accountInfo: { accountId: PublicKey; accountInfo: { data: Buffer } }): void {
+  private async processAccountChange(programName: string, accountInfo: { accountId: PublicKey; accountInfo: { data: Buffer } }): Promise<void> {
+    if (!(await isBotEnabled())) return;
     const accountAddress = accountInfo.accountId.toBase58();
     const dataLength = accountInfo.accountInfo.data.length;
 
