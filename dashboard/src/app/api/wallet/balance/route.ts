@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { dashboardConfig } from '@/config/dashboard.config';
 import { requireAuth } from '@/lib/auth-guard';
 
-const CACHE_TTL = 30;
+const CACHE_TTL = 60;
 
 export async function GET(req: NextRequest) {
   const { session, error } = await requireAuth();
@@ -38,10 +38,10 @@ export async function GET(req: NextRequest) {
 
   const skipCache = req.nextUrl.searchParams.get('nocache') === '1';
 
+  const cacheKey = `dashboard:wallet_balance:${walletAddress}`;
   if (!skipCache) {
     try {
       await redis.connect().catch(() => {});
-      const cacheKey = `dashboard:wallet_balance:${walletAddress}`;
       const cached = await redis.get(cacheKey);
       if (cached) {
         return NextResponse.json(JSON.parse(cached));
@@ -71,7 +71,17 @@ export async function GET(req: NextRequest) {
 
     const json = await res.json();
     if (json.error || json.result == null) {
-      const rpcError = json.error?.message ?? json.error?.data ?? 'RPC retornou erro';
+      const rpcError = String(json.error?.message ?? json.error?.data ?? 'RPC retornou erro');
+      const isRateLimit = /rate limit|rate limited|429/i.test(rpcError);
+      if (isRateLimit) {
+        try {
+          await redis.connect().catch(() => {});
+          const cached = await redis.get(cacheKey);
+          if (cached) {
+            return NextResponse.json(JSON.parse(cached));
+          }
+        } catch {}
+      }
       return NextResponse.json(
         { sol: 0, usd: null, error: `RPC falhou: ${rpcError}` },
         { status: 500 },

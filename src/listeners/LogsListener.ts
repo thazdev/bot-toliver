@@ -156,30 +156,31 @@ export class LogsListener extends BaseListener {
     processStartMs: number,
   ): Promise<void> {
     try {
-      const connection = this.connectionManager.getConnection();
-
       let blockTime = Math.floor(Date.now() / 1000);
-      try {
-        const tx = await connection.getTransaction(signature, {
-          maxSupportedTransactionVersion: 0,
-        });
-        if (tx?.blockTime) {
-          blockTime = tx.blockTime;
-        }
+      const hasTokenFromLogs = !!(discovered.tokenMint && discovered.tokenMint.length >= 32);
 
-        if (tx?.transaction?.message) {
-          const accountKeys = tx.transaction.message.getAccountKeys
-            ? tx.transaction.message.getAccountKeys().staticAccountKeys
-            : [];
-          if (accountKeys.length > 0 && !discovered.tokenMint) {
-            discovered.tokenMint = accountKeys[accountKeys.length - 1]?.toBase58() ?? '';
+      if (!hasTokenFromLogs) {
+        const connection = this.connectionManager.getConnection();
+        const rateLimiter = this.connectionManager.getRateLimiter();
+        try {
+          const tx = await rateLimiter.schedule(() =>
+            connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 }),
+          );
+          if (tx?.blockTime) blockTime = tx.blockTime;
+          if (tx?.transaction?.message) {
+            const accountKeys = tx.transaction.message.getAccountKeys
+              ? tx.transaction.message.getAccountKeys().staticAccountKeys
+              : [];
+            if (accountKeys.length > 0 && !discovered.tokenMint) {
+              discovered.tokenMint = accountKeys[accountKeys.length - 1]?.toBase58() ?? '';
+            }
+            if (accountKeys.length > 1 && !discovered.poolAddress) {
+              discovered.poolAddress = accountKeys[1]?.toBase58() ?? '';
+            }
           }
-          if (accountKeys.length > 1 && !discovered.poolAddress) {
-            discovered.poolAddress = accountKeys[1]?.toBase58() ?? '';
-          }
+        } catch {
+          logger.debug('LogsListener: could not fetch tx details, using Date.now()', { signature });
         }
-      } catch {
-        logger.debug('LogsListener: could not fetch tx details, using Date.now()', { signature });
       }
 
       const latencyMs = Date.now() - (blockTime * 1000);

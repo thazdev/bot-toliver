@@ -323,10 +323,13 @@ export class ScamDetector {
 
       let rpcCalls = 0;
       const connection = ConnectionManager.getInstance().getConnection();
+      const rateLimiter = ConnectionManager.getInstance().getRateLimiter();
       const devPubkey = new PublicKey(devWallet);
 
       rpcCalls++;
-      const signatures = await connection.getSignaturesForAddress(devPubkey, { limit: 10 });
+      const signatures = await rateLimiter.schedule(() =>
+        connection.getSignaturesForAddress(devPubkey, { limit: 10 }),
+      );
 
       if (signatures.length === 0) {
         const result = [devWallet];
@@ -340,9 +343,9 @@ export class ScamDetector {
         if (rpcCalls >= MAX_RPC_CALLS) break;
 
         rpcCalls++;
-        const tx = await connection.getTransaction(sig.signature, {
-          maxSupportedTransactionVersion: 0,
-        });
+        const tx = await rateLimiter.schedule(() =>
+          connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0 }),
+        );
 
         if (!tx?.meta || !tx.transaction?.message) continue;
 
@@ -384,7 +387,9 @@ export class ScamDetector {
       if (rpcCalls < MAX_RPC_CALLS) {
         rpcCalls++;
         const fundingPubkey = new PublicKey(fundingSource);
-        const fundingSigs = await connection.getSignaturesForAddress(fundingPubkey, { limit: 10 });
+        const fundingSigs = await rateLimiter.schedule(() =>
+          connection.getSignaturesForAddress(fundingPubkey, { limit: 10 }),
+        );
 
         const totalFundingTxCount = fundingSigs.length;
         if (totalFundingTxCount >= 10) {
@@ -405,9 +410,9 @@ export class ScamDetector {
           if (sig.blockTime && sig.blockTime < sevenDaysAgo) continue;
 
           rpcCalls++;
-          const tx = await connection.getTransaction(sig.signature, {
-            maxSupportedTransactionVersion: 0,
-          });
+          const tx = await rateLimiter.schedule(() =>
+            connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0 }),
+          );
 
           if (!tx?.meta || !tx.transaction?.message) continue;
 
