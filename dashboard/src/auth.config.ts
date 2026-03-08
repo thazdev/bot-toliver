@@ -6,7 +6,7 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }: any) {
       const isLoggedIn = !!auth?.user;
-      const isPublicPath = ['/login', '/setup', '/api/auth', '/api/setup', '/api/health'].some(
+      const isPublicPath = ['/login', '/setup', '/signup', '/api/auth', '/api/setup', '/api/signup', '/api/health'].some(
         (p: string) => nextUrl.pathname.startsWith(p),
       );
       if (isPublicPath) return true;

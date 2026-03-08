@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Bot, Loader2 } from 'lucide-react';
@@ -41,6 +42,9 @@ export default function LoginPage() {
           </div>
           <h1 className="text-xl font-bold text-white">Toliver Dashboard</h1>
           <p className="mt-1 text-sm text-slate-500">Entre com suas credenciais</p>
+        <Link href="/signup" className="mt-2 text-xs text-accent hover:underline">
+          Não tem conta? Criar conta
+        </Link>
         </div>
 
         <form onSubmit={handleSubmit} className="glass-card space-y-4 p-6">
