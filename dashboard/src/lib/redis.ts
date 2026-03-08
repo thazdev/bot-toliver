@@ -3,7 +3,7 @@ import { dashboardConfig } from '@/config/dashboard.config';
 
 const globalForRedis = globalThis as unknown as { redis: Redis | undefined };
 
-export const redis =
+const redisInstance =
   globalForRedis.redis ??
   (dashboardConfig.redis.url
     ? new Redis(dashboardConfig.redis.url, { maxRetriesPerRequest: 3, lazyConnect: true })
@@ -15,10 +15,14 @@ export const redis =
         lazyConnect: true,
       }));
 
+redisInstance.on('error', () => {}); // Evita crash quando Redis inacessível (ex: railway.internal fora da rede)
+
+export const redis = redisInstance;
+
 if (process.env.NODE_ENV !== 'production') globalForRedis.redis = redis;
 
 export function createRedisSubscriber() {
-  return dashboardConfig.redis.url
+  const r = dashboardConfig.redis.url
     ? new Redis(dashboardConfig.redis.url!, { maxRetriesPerRequest: 3 })
     : new Redis({
         host: dashboardConfig.redis.host,
@@ -26,4 +30,6 @@ export function createRedisSubscriber() {
         password: dashboardConfig.redis.password,
         maxRetriesPerRequest: 3,
       });
+  r.on('error', () => {});
+  return r;
 }

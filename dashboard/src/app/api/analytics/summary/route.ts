@@ -17,10 +17,28 @@ export async function GET() {
   const { error } = await requireAuth();
   if (error) return error;
 
-  const closed = await prisma.position.findMany({
-    where: { status: { in: ['closed', 'partial'] } },
-    orderBy: { closedAt: 'asc' },
-  });
+  let closed;
+  try {
+    closed = await prisma.position.findMany({
+      where: { status: { in: ['closed', 'partial'] } },
+      orderBy: { closedAt: 'asc' },
+    });
+  } catch {
+    return NextResponse.json(
+      {
+        error: 'Database unreachable',
+        hint: 'mysql.railway.internal só resolve na rede Railway. Use MYSQL_HOST público se o dashboard rodar fora.',
+        tradesByHour: [],
+        scoreVsRoi: [],
+        winRateRolling: [],
+        exitReasons: [],
+        maxDrawdown: 0,
+        bestWinStreak: 0,
+        worstLossStreak: 0,
+      },
+      { status: 503 },
+    );
+  }
 
   // Trades by hour
   const hourCounts = new Array(24).fill(0);

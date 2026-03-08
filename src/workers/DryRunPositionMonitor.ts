@@ -55,6 +55,13 @@ async function publishSnapshot(): Promise<void> {
     const totalPnl = closed.reduce((s, p) => s + (p.finalPnlSOL ?? 0), 0);
     const wins = closed.filter((p) => (p.finalPnlSOL ?? 0) > 0).length;
     const winRate = closed.length > 0 ? (wins / closed.length) * 100 : 0;
+    const pnlPercents = closed.map((p) => p.finalPnlPct ?? 0).filter((x) => isFinite(x));
+    const bestTrade = pnlPercents.length > 0 ? Math.max(...pnlPercents) : 0;
+    const worstTrade = pnlPercents.length > 0 ? Math.min(...pnlPercents) : 0;
+    const holdTimes = closed
+      .filter((p) => p.entryTime && p.exitTime)
+      .map((p) => (new Date(p.exitTime!).getTime() - new Date(p.entryTime!).getTime()) / 60_000);
+    const avgHoldMin = holdTimes.length > 0 ? holdTimes.reduce((a, b) => a + b, 0) / holdTimes.length : 0;
 
     await redis.publish(
       'bot:events',
@@ -65,9 +72,13 @@ async function publishSnapshot(): Promise<void> {
         summary: {
           totalCapitalSOL: TOTAL_CAPITAL_SOL,
           capitalInUse,
+          capitalInUsePct: TOTAL_CAPITAL_SOL > 0 ? (capitalInUse / TOTAL_CAPITAL_SOL) * 100 : 0,
           availableCapital: Math.max(0, TOTAL_CAPITAL_SOL - capitalInUse),
           totalPnlSOL: totalPnl,
           winRate,
+          bestTrade,
+          worstTrade,
+          avgHoldMin,
           openCount: open.length,
           closedCount: closed.length,
         },

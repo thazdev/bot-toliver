@@ -51,27 +51,62 @@ export async function GET(req: NextRequest) {
     where.closedAt = { ...(where.closedAt as object), lte: end };
   }
 
-  const [positions, total] = await Promise.all([
-    prisma.position.findMany({
-      where,
-      orderBy: { closedAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.position.count({ where }),
-  ]);
+  let positions: Awaited<ReturnType<typeof prisma.position.findMany>>;
+  let total: number;
+
+  try {
+    [positions, total] = await Promise.all([
+      prisma.position.findMany({
+        where,
+        orderBy: { closedAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.position.count({ where }),
+    ]);
+  } catch {
+    return NextResponse.json(
+      {
+        error: 'Database unreachable',
+        hint: 'mysql.railway.internal só resolve na rede Railway.',
+        positions: [],
+        total: 0,
+        page: 1,
+        pageSize: 20,
+        summary: {
+          totalTrades: 0,
+          winRate: 0,
+          avgWin: 0,
+          avgLoss: 0,
+          bestTrade: 0,
+          worstTrade: 0,
+        },
+      },
+      { status: 503 },
+    );
+  }
 
   const mints = [...new Set(positions.map((p) => p.tokenMint))];
-  const tokens = await prisma.token.findMany({
-    where: { mintAddress: { in: mints } },
-    select: { mintAddress: true, symbol: true },
-  });
+  let tokens: Awaited<ReturnType<typeof prisma.token.findMany>>;
+  try {
+    tokens = await prisma.token.findMany({
+      where: { mintAddress: { in: mints } },
+      select: { mintAddress: true, symbol: true },
+    });
+  } catch {
+    tokens = [];
+  }
   const symbolMap = Object.fromEntries(tokens.map((t) => [t.mintAddress, t.symbol]));
 
-  const allClosed = await prisma.position.findMany({
-    where: { status: { in: ['closed', 'partial'] } },
-    select: { pnlSol: true, pnlPercent: true },
-  });
+  let allClosed: Awaited<ReturnType<typeof prisma.position.findMany>>;
+  try {
+    allClosed = await prisma.position.findMany({
+      where: { status: { in: ['closed', 'partial'] } },
+      select: { pnlSol: true, pnlPercent: true },
+    });
+  } catch {
+    allClosed = [];
+  }
 
   const wins = allClosed.filter((p) => Number(p.pnlSol) > 0);
   const losses = allClosed.filter((p) => Number(p.pnlSol) <= 0);

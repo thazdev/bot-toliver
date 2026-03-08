@@ -9,20 +9,25 @@ export function initSocketHandlers(io: Server) {
   const prisma = new PrismaClient();
 
   const redisClient = dashboardConfig.redis.url
-    ? new Redis(dashboardConfig.redis.url, { lazyConnect: true })
+    ? new Redis(dashboardConfig.redis.url, { lazyConnect: true, maxRetriesPerRequest: 3 })
     : new Redis({
         host: dashboardConfig.redis.host,
         port: dashboardConfig.redis.port,
         password: dashboardConfig.redis.password,
         lazyConnect: true,
+        maxRetriesPerRequest: 3,
       });
   const redisSub = dashboardConfig.redis.url
-    ? new Redis(dashboardConfig.redis.url)
+    ? new Redis(dashboardConfig.redis.url, { maxRetriesPerRequest: 3 })
     : new Redis({
         host: dashboardConfig.redis.host,
         port: dashboardConfig.redis.port,
         password: dashboardConfig.redis.password,
+        maxRetriesPerRequest: 3,
       });
+
+  redisClient.on('error', () => {});
+  redisSub.on('error', () => {});
 
   redisClient.connect().catch(() => {});
   redisSub.connect().catch(() => {});
