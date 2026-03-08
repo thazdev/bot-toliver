@@ -123,13 +123,6 @@ export class LogsListener extends BaseListener {
       return;
     }
 
-    logger.info('TOKEN_DETECTED', {
-      source: detected.source,
-      signature: detected.signature,
-      mint: detected.mintAddress ?? 'resolving...',
-      needsResolution: detected.needsResolution,
-    });
-
     const now = Date.now();
     if (now - this.lastLogInfoAt > 60_000) {
       this.lastLogInfoAt = now;
