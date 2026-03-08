@@ -55,10 +55,18 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const count = await prisma.user.count();
-  return NextResponse.json({
-    canSignup: count < dashboardConfig.auth.maxUsers,
-    maxUsers: dashboardConfig.auth.maxUsers,
-    currentUsers: count,
-  });
+  try {
+    const count = await prisma.user.count();
+    return NextResponse.json({
+      canSignup: count < dashboardConfig.auth.maxUsers,
+      maxUsers: dashboardConfig.auth.maxUsers,
+      currentUsers: count,
+    });
+  } catch (e) {
+    console.error('[signup GET]', e);
+    return NextResponse.json(
+      { canSignup: false, error: 'Database connection failed' },
+      { status: 503 },
+    );
+  }
 }

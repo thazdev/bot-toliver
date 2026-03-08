@@ -17,13 +17,23 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
-  const [canSignup, setCanSignup] = useState(true);
+  const [canSignup, setCanSignup] = useState<boolean | null>(null);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     fetch('/api/signup')
-      .then((r) => r.json())
-      .then((d) => setCanSignup(d.canSignup ?? false))
-      .catch(() => setCanSignup(false));
+      .then((r) => {
+        if (!r.ok) throw new Error('API error');
+        return r.json();
+      })
+      .then((d) => {
+        setCanSignup(d.canSignup ?? false);
+        setLoadError('');
+      })
+      .catch(() => {
+        setCanSignup(null);
+        setLoadError('Erro ao conectar. Verifique se o banco de dados está configurado.');
+      });
   }, []);
 
   function update(field: string, value: string) {
@@ -69,7 +79,23 @@ export default function SignupPage() {
     setTimeout(() => router.push('/login'), 2000);
   }
 
-  if (!canSignup) {
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="glass-card max-w-sm p-6 text-center">
+          <p className="text-danger">{loadError}</p>
+          <p className="mt-2 text-xs text-slate-500">
+            No Railway: confira se DATABASE_URL está correto nas Variables do dashboard.
+          </p>
+          <Link href="/login" className="mt-4 inline-block text-accent hover:underline">
+            Ir para login
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (canSignup === false) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
         <div className="glass-card max-w-sm p-6 text-center">
@@ -78,6 +104,14 @@ export default function SignupPage() {
             Ir para login
           </Link>
         </div>
+      </div>
+    );
+  }
+
+  if (canSignup === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-slate-400">Carregando…</p>
       </div>
     );
   }
