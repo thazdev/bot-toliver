@@ -191,8 +191,12 @@ export class TradeFilterPipeline {
       return { step: 'hard_reject', passed: false, reason: 'Known honeypot in DB', durationMs: Date.now() - start };
     }
 
-    if (context.tokenAgeSec < this.filterConfig.deferTokenAgeSec) {
-      return { step: 'hard_reject', passed: false, reason: `Token age ${context.tokenAgeSec.toFixed(0)}s < ${this.filterConfig.deferTokenAgeSec}s — DEFERRED`, durationMs: Date.now() - start };
+    const envDefer = process.env.DEFER_TOKEN_AGE_SEC;
+    const deferSec = envDefer !== undefined
+      ? (parseInt(envDefer, 10) || 0)
+      : this.filterConfig.deferTokenAgeSec;
+    if (deferSec > 0 && context.tokenAgeSec < deferSec) {
+      return { step: 'hard_reject', passed: false, reason: `Token age ${context.tokenAgeSec.toFixed(0)}s < ${deferSec}s — DEFERRED`, durationMs: Date.now() - start };
     }
 
     if (context.safetyData.isBlacklisted) {

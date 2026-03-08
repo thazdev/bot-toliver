@@ -734,7 +734,7 @@ export function getTierConfig(tier: StrategyTier): TierConfig {
     },
     filter: {
       ...base.filter,
-      deferTokenAgeSec: 3,
+      deferTokenAgeSec: 0,
       minRugScoreStep3: Math.min(base.filter.minRugScoreStep3, 35),
       minEntryScoreThreshold: Math.min(base.filter.minEntryScoreThreshold, 30),
       feedbackMinSampleSize: 1,
