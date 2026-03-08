@@ -25,13 +25,16 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    debugLog('1-LOGIN-SUBMIT', { username, redirect: false });
+    debugLog('1-LOGIN-SUBMIT', { username });
 
     try {
+      // redirect: true = servidor retorna 302 com Set-Cookie na mesma resposta.
+      // Evita problema de cookie não ser enviado em navegação posterior (Railway/proxy).
       const res = await signIn('credentials', {
         username,
         password,
-        redirect: false,
+        redirect: true,
+        callbackUrl: '/',
       });
 
       debugLog('2-SIGNIN-RESPONSE', {
@@ -39,25 +42,15 @@ export default function LoginPage() {
         error: res?.error,
         status: res?.status,
         url: res?.url,
-        full: res ? JSON.stringify(res) : 'null',
       });
 
       setLoading(false);
 
+      // Com redirect: true, signIn não retorna em caso de sucesso (navega).
       if (res?.error) {
         debugLog('3-SIGNIN-ERROR', res.error);
         setError('Credenciais inválidas');
-        return;
       }
-
-      if (res?.ok) {
-        debugLog('4-SIGNIN-OK-REDIRECT', { target: '/' });
-        window.location.replace('/');
-        return;
-      }
-
-      debugLog('5-SIGNIN-UNEXPECTED', { res: res ? 'exists' : 'null' });
-      setError('Resposta inesperada do servidor');
     } catch (err) {
       debugLog('6-SIGNIN-EXCEPTION', { err: String(err) });
       setLoading(false);
