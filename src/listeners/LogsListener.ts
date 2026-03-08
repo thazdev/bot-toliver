@@ -21,12 +21,19 @@ interface DiscoveredToken {
   source: 'raydium' | 'raydium_clmm' | 'pumpfun';
 }
 
+const LOG_THROTTLE_MS = 30_000; // 30s para logs de diagnóstico repetitivos
+const DISCOVERY_LOG_INTERVAL_MS = 15_000; // 15s para "new token discovered"
+
 export class LogsListener extends BaseListener {
   private subscriptionIds: number[] = [];
   private connectionManager: ConnectionManager;
   private logBatchCount = 0;
   private lastLogInfoAt = 0;
   private lastDiscoveryLogAt = 0;
+  private lastFetchTxErrorAt = 0;
+  private lastLatencyWarnAt = 0;
+  private lastNoTokenMintAt = 0;
+  private lastLiquidityBelowAt = 0;
 
   constructor(queueManager: QueueManager) {
     super('LogsListener', queueManager);
@@ -194,14 +201,17 @@ export class LogsListener extends BaseListener {
             }
           }
         } catch {
-          logger.debug('LogsListener: could not fetch tx details, using Date.now()', { signature });
+          if (Date.now() - this.lastFetchTxErrorAt > LOG_THROTTLE_MS) {
+            this.lastFetchTxErrorAt = Date.now();
+            logger.debug('LogsListener: could not fetch tx details, using Date.now()', { signature });
+          }
         }
       }
 
       const latencyMs = Date.now() - (blockTime * 1000);
 
       const now = Date.now();
-      if (now - this.lastDiscoveryLogAt > 5_000) {
+      if (now - this.lastDiscoveryLogAt > DISCOVERY_LOG_INTERVAL_MS) {
         this.lastDiscoveryLogAt = now;
         logger.info('LogsListener: new token discovered', {
           source,
@@ -210,16 +220,11 @@ export class LogsListener extends BaseListener {
           initialLiquiditySOL: discovered.initialLiquiditySOL ?? 0,
           discoveryLatencyMs: latencyMs,
         });
-      } else {
-        logger.debug('LogsListener: new token discovered', {
-          source,
-          tokenMint: (discovered.tokenMint ?? '').slice(0, 8),
-          initialLiquiditySOL: discovered.initialLiquiditySOL ?? 0,
-        });
       }
 
       const latencyThreshold = parseInt(process.env.DISCOVERY_LATENCY_WARN_MS ?? '5000', 10);
-      if (latencyMs > latencyThreshold) {
+      if (latencyMs > latencyThreshold && Date.now() - this.lastLatencyWarnAt > LOG_THROTTLE_MS) {
+        this.lastLatencyWarnAt = Date.now();
         logger.debug('LogsListener: discovery latency alta (queue pode estar cheia)', {
           latencyMs,
           source,
@@ -230,17 +235,23 @@ export class LogsListener extends BaseListener {
       const poolAddress = discovered.poolAddress ?? '';
       const tokenMint = discovered.tokenMint ?? '';
       if (!tokenMint || tokenMint.length < 32) {
-        logger.debug('LogsListener: ignorando discovery sem tokenMint', { poolAddress: poolAddress.slice(0, 8) });
+        if (Date.now() - this.lastNoTokenMintAt > LOG_THROTTLE_MS) {
+          this.lastNoTokenMintAt = Date.now();
+          logger.debug('LogsListener: ignorando discovery sem tokenMint', { poolAddress: poolAddress.slice(0, 8) });
+        }
         return;
       }
       const liquiditySol = discovered.initialLiquiditySOL ?? 0;
       const minLiq = parseFloat(process.env.MIN_LIQUIDITY_SOL ?? '0');
       if (minLiq > 0 && liquiditySol < minLiq) {
-        logger.debug('LogsListener: token ignorado (liquidez abaixo do mínimo)', {
-          liquiditySol,
-          minLiquiditySol: minLiq,
-          tokenMint: tokenMint.slice(0, 8),
-        });
+        if (Date.now() - this.lastLiquidityBelowAt > LOG_THROTTLE_MS) {
+          this.lastLiquidityBelowAt = Date.now();
+          logger.debug('LogsListener: token ignorado (liquidez abaixo do mínimo)', {
+            liquiditySol,
+            minLiquiditySol: minLiq,
+            tokenMint: tokenMint.slice(0, 8),
+          });
+        }
         return;
       }
 

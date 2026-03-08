@@ -98,7 +98,7 @@ export class PumpFunListener extends BaseListener {
     }
 
     if (hasBuy) {
-      logger.debug('Pump.fun buy detected', { signature });
+      // Buy detectado — sem log para reduzir ruído (eventos muito frequentes)
     }
   }
 

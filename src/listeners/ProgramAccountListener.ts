@@ -55,17 +55,10 @@ export class ProgramAccountListener extends BaseListener {
     }
   }
 
-  private async processAccountChange(programName: string, accountInfo: { accountId: PublicKey; accountInfo: { data: Buffer } }): Promise<void> {
+  private async processAccountChange(_programName: string, _accountInfo: { accountId: PublicKey; accountInfo: { data: Buffer } }): Promise<void> {
     if (!(await isBotEnabled())) return;
-    const accountAddress = accountInfo.accountId.toBase58();
-    const dataLength = accountInfo.accountInfo.data.length;
-
-    logger.debug('Program account change detected', {
-      program: programName,
-      account: accountAddress,
-      dataLength,
-    });
     // Não emite POOL_CREATED sem tokenMint — evita flood de "ignorado"
+    // Log removido: "Program account change detected" gerava excesso de logs
   }
 
   /**
