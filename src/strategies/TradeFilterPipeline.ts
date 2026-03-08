@@ -54,7 +54,6 @@ export class TradeFilterPipeline {
   private knownRugDevs: Set<string> = new Set();
   private honeypotDb: Set<string> = new Set();
   private emergencyHalt: boolean = false;
-  private stage1ReasonLogged: Set<string> = new Set();
 
   constructor(tier: StrategyTier) {
     this.tier = tier;
@@ -110,7 +109,7 @@ export class TradeFilterPipeline {
       if (!step2.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
     }
 
-    const step3 = this.step3BasicViability(context);
+    const step3 = await this.step3BasicViability(context);
     steps.push(step3);
     const isRugReject = !step3.passed && step3.reason?.toLowerCase().includes('rug score');
     telemetry.stage2_result = step3.passed ? 'passed' : (isRugReject ? 'passed' : `rejected: ${step3.reason}`);
@@ -206,27 +205,48 @@ export class TradeFilterPipeline {
     return { step: 'hard_reject', passed: true, reason: 'Passed hard reject filter', durationMs: Date.now() - start };
   }
 
-  private step3BasicViability(context: StrategyContext): FilterPipelineResult {
+  private async step3BasicViability(context: StrategyContext): Promise<FilterPipelineResult> {
     const start = Date.now();
+    const tokenMint = context.tokenInfo.mintAddress;
+    const minRequired = this.tierConfig.entry.minLiquiditySol;
 
-    if (context.liquidity < this.tierConfig.entry.minLiquiditySol) {
+    // STAGE2_VALUES: log para CADA token (passa ou rejeita) — diagnóstico
+    logger.info('STAGE2_VALUES', {
+      tokenMint: tokenMint.slice(0, 12),
+      liquiditySOL: context.liquidity,
+      minRequired,
+      mintAuthority: !context.safetyData.mintAuthorityDisabled ? 'active' : 'disabled',
+      freezeAuthority: !context.safetyData.freezeAuthorityAbsent ? 'set' : 'absent',
+      rugScore: context.safetyData.rugScore,
+      rejectReason: null as string | null,
+    });
+
+    if (context.liquidity < minRequired) {
+      const reasonCode = 'liquidity_too_low';
+      await this.logStage2Rejection(tokenMint, reasonCode, `Liquidity ${context.liquidity.toFixed(2)} SOL < min ${minRequired}`);
       return {
         step: 'basic_viability',
         passed: false,
-        reason: `Liquidity ${context.liquidity.toFixed(2)} SOL < min ${this.tierConfig.entry.minLiquiditySol}`,
+        reason: `Liquidity ${context.liquidity.toFixed(2)} SOL < min ${minRequired}`,
         durationMs: Date.now() - start,
       };
     }
 
     if (!context.safetyData.mintAuthorityDisabled) {
+      const reasonCode = 'mint_authority_active';
+      await this.logStage2Rejection(tokenMint, reasonCode, 'Mint authority not disabled');
       return { step: 'basic_viability', passed: false, reason: 'Mint authority not disabled', durationMs: Date.now() - start };
     }
 
     if (!context.safetyData.freezeAuthorityAbsent) {
+      const reasonCode = 'freeze_authority_set';
+      await this.logStage2Rejection(tokenMint, reasonCode, 'Freeze authority present');
       return { step: 'basic_viability', passed: false, reason: 'Freeze authority present', durationMs: Date.now() - start };
     }
 
     if (context.safetyData.rugScore < this.filterConfig.minRugScoreStep3) {
+      const reasonCode = 'rug_score_too_low';
+      await this.logStage2Rejection(tokenMint, reasonCode, `Rug score ${context.safetyData.rugScore} < ${this.filterConfig.minRugScoreStep3}`);
       return {
         step: 'basic_viability',
         passed: false,
@@ -237,6 +257,20 @@ export class TradeFilterPipeline {
     }
 
     return { step: 'basic_viability', passed: true, reason: 'Basic viability passed', durationMs: Date.now() - start };
+  }
+
+  private async logStage2Rejection(tokenMint: string, reasonCode: string, details: string): Promise<void> {
+    logger.info('STAGE2_REJECT_REASON', {
+      tokenMint: tokenMint.slice(0, 12),
+      reason: reasonCode,
+      details,
+    });
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      await redis.incr(`diag:stage2_reject_${reasonCode}`);
+    } catch {
+      // ignora
+    }
   }
 
   private step4DeepAnalysis(context: StrategyContext): FilterPipelineResult {
@@ -398,6 +432,7 @@ export class TradeFilterPipeline {
   }
 
   private getStage1ReasonCode(reason: string): string {
+    if (!reason || reason.trim() === '') return 'unknown';
     if (reason.includes('Blacklisted address')) return 'blacklist';
     if (reason.includes('Known rug dev')) return 'known_rug_dev';
     if (reason.includes('Known honeypot')) return 'honeypot_db';
@@ -408,14 +443,11 @@ export class TradeFilterPipeline {
   }
 
   private async logStage1Rejection(tokenMint: string, reasonCode: string, details: string): Promise<void> {
-    if (!this.stage1ReasonLogged.has(reasonCode)) {
-      this.stage1ReasonLogged.add(reasonCode);
-      logger.info('STAGE1_REJECT_REASON', {
-        tokenMint: tokenMint.slice(0, 12),
-        reason: reasonCode,
-        details,
-      });
-    }
+    logger.info('STAGE1_REJECT_REASON', {
+      tokenMint: tokenMint.slice(0, 12),
+      reason: reasonCode,
+      details,
+    });
     try {
       const redis = RedisClient.getInstance().getClient();
       await redis.incr(`diag:stage1_reject_${reasonCode}`);
