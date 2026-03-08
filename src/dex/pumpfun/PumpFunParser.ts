@@ -1,5 +1,9 @@
 import { logger } from '../../utils/logger.js';
 
+/** Discriminator sha256("account:BondingCurve")[0:8] */
+const BONDING_CURVE_DISCRIMINATOR = Buffer.from([0x17, 0xb7, 0xf8, 0x37, 0x60, 0xd8, 0xac, 0x60]);
+const MIN_BONDING_CURVE_SIZE = 49; // 8 + 5*8 + 1
+
 export interface PumpFunBondingCurveState {
   virtualTokenReserves: bigint;
   virtualSolReserves: bigint;
@@ -11,43 +15,33 @@ export interface PumpFunBondingCurveState {
 
 /**
  * Decodes Pump.fun bonding curve account state data.
- * Parses virtual/real reserves and token mint from raw account buffer.
+ * Layout: 8b discriminator + virtualToken(8) + virtualSol(8) + realToken(8) + realSol(8) + tokenTotalSupply(8) + complete(1).
+ * O bonding curve NÃO contém tokenMint — ele é derivado via PDA a partir do mint.
  */
 export class PumpFunParser {
-  /**
-   * Parses raw bonding curve account data into PumpFunBondingCurveState.
-   * @param data - Raw account data buffer
-   * @returns Parsed bonding curve state or null if invalid
-   */
   static parse(data: Buffer): PumpFunBondingCurveState | null {
     try {
-      if (data.length < 120) {
-        logger.debug('PumpFunParser: data too short', { length: data.length });
+      if (data.length < MIN_BONDING_CURVE_SIZE) {
+        logger.debug('PumpFunParser: data too short', { length: data.length, min: MIN_BONDING_CURVE_SIZE });
+        return null;
+      }
+      if (data.subarray(0, 8).compare(BONDING_CURVE_DISCRIMINATOR) !== 0) {
+        logger.debug('PumpFunParser: invalid discriminator', { first8: data.slice(0, 8).toString('hex') });
         return null;
       }
 
-      const discriminator = data.slice(0, 8);
       const virtualTokenReserves = data.readBigUInt64LE(8);
       const virtualSolReserves = data.readBigUInt64LE(16);
       const realTokenReserves = data.readBigUInt64LE(24);
       const realSolReserves = data.readBigUInt64LE(32);
-      const tokenMintBytes = data.slice(40, 72);
-      const complete = data[72] === 1;
-
-      let tokenMint = '';
-      try {
-        const { PublicKey } = require('@solana/web3.js') as typeof import('@solana/web3.js');
-        tokenMint = new PublicKey(tokenMintBytes).toBase58();
-      } catch {
-        tokenMint = '';
-      }
+      const complete = data[48] === 1;
 
       return {
         virtualTokenReserves,
         virtualSolReserves,
         realTokenReserves,
         realSolReserves,
-        tokenMint,
+        tokenMint: '',
         complete,
       };
     } catch (error: unknown) {

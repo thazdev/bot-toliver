@@ -150,8 +150,12 @@ export class LogsListener extends BaseListener {
     await this.fetchBlockTimeAndEmit(signature, discovered, 'pumpfun', processStartMs);
   }
 
+  /** Discriminator da instrução Create: sha256("global:create")[0:8] */
+  private static readonly CREATE_DISCRIMINATOR = Buffer.from([24, 30, 200, 40, 5, 28, 7, 119]);
+
   /**
    * Extrai tokenMint e poolAddress do "Program data:" base64 (Pump.fun Create).
+   * Só processa dados com discriminator Create.
    */
   private extractTokenFromProgramData(logMessages: string[]): Partial<DiscoveredToken> {
     for (const log of logMessages) {
@@ -161,6 +165,7 @@ export class LogsListener extends BaseListener {
       try {
         const buf = Buffer.from(base64, 'base64');
         if (buf.length < 8 + 4 + 4 + 4 + 32 + 32 + 32) continue;
+        if (buf.subarray(0, 8).compare(LogsListener.CREATE_DISCRIMINATOR) !== 0) continue;
         let offset = 8;
         const readString = (): void => {
           if (offset + 4 > buf.length) return;

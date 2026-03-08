@@ -45,10 +45,15 @@ export class PumpFunClient extends BaseDex {
       const rateLimiter = this.connectionManager.getRateLimiter();
       const connection = this.connectionManager.getConnection();
 
-      const accountInfo = await rateLimiter.schedule(() =>
+      let accountInfo = await rateLimiter.schedule(() =>
         connection.getAccountInfo(bondingCurveAddress),
       );
-
+      if (!accountInfo) {
+        await new Promise((r) => setTimeout(r, 250));
+        accountInfo = await rateLimiter.schedule(() =>
+          connection.getAccountInfo(bondingCurveAddress),
+        );
+      }
       if (!accountInfo) {
         return null;
       }

@@ -110,8 +110,12 @@ export class PumpFunListener extends BaseListener {
     }
   }
 
+  /** Discriminator da instrução Create: sha256("global:create")[0:8] */
+  private static readonly CREATE_DISCRIMINATOR = Buffer.from([24, 30, 200, 40, 5, 28, 7, 119]);
+
   /**
    * Extrai mint do "Program data:" base64 (Create instruction).
+   * Só processa dados com discriminator Create para evitar Metaplex/Buy.
    * Formato: 8b discriminator + name + symbol + uri + 32b mint + 32b bondingCurve + 32b user.
    */
   private extractMintFromProgramData(logMessages: string[]): string {
@@ -121,16 +125,17 @@ export class PumpFunListener extends BaseListener {
       if (!base64) continue;
       try {
         const buf = Buffer.from(base64, 'base64');
-        if (buf.length < 8 + 4 + 4 + 4 + 32 + 32 + 32) continue; // mínimo: header + 3 strings vazias + 3 pubkeys
-        let offset = 8; // discriminator
+        if (buf.length < 8 + 4 + 4 + 4 + 32 + 32 + 32) continue;
+        if (buf.subarray(0, 8).compare(PumpFunListener.CREATE_DISCRIMINATOR) !== 0) continue;
+        let offset = 8;
         const readString = (): void => {
           if (offset + 4 > buf.length) return;
           const len = buf.readUInt32LE(offset);
           offset += 4 + len;
         };
-        readString(); // name
-        readString(); // symbol
-        readString(); // uri
+        readString();
+        readString();
+        readString();
         if (offset + 32 > buf.length) continue;
         const mintBytes = buf.subarray(offset, offset + 32);
         const mint = new PublicKey(mintBytes).toBase58();
