@@ -21,7 +21,7 @@ export const dashboardConfig = {
     strategyTier: process.env.BOT_STRATEGY_TIER || 'conservative',
     maxPositionSizeSol: Number(process.env.BOT_MAX_POSITION_SIZE_SOL) || 0.05,
     stopLossPercent: Number(process.env.BOT_STOP_LOSS_PERCENT) || 15,
-    dryRun: process.env.BOT_DRY_RUN === 'true',
+    dryRun: false, // actual mode comes from Redis bot:mode at runtime
   },
   jupiter: {
     priceUrl: 'https://price.jup.ag/v4/price',

@@ -47,7 +47,7 @@ import { LaunchStrategy } from './strategies/LaunchStrategy.js';
 import { ExitManager } from './strategies/ExitManager.js';
 import { StopLossManager } from './strategies/StopLossManager.js';
 import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
-import { getTierConfig, shouldRelaxFiltersForDryRun } from './strategies/config.js';
+import { getTierConfig } from './strategies/config.js';
 import { getEffectiveDryRun } from './config/DryRunResolver.js';
 import { getOpenPositionsTotalSOL } from './services/DryRunPositionService.js';
 import { isBotEnabled } from './config/BotEnabledResolver.js';
@@ -152,17 +152,10 @@ async function main(): Promise<void> {
     helius_ws_set: !!process.env.HELIUS_WS_URL,
     helius_ws_starts_with_wss: process.env.HELIUS_WS_URL?.startsWith('wss://'),
     wallet_set: !!process.env.WALLET_PRIVATE_KEY,
-    dry_run: process.env.DRY_RUN,
-    strategy_tier: process.env.STRATEGY_TIER,
+    strategy_tier: config.trading.strategyTier,
     redis_connected: false,
     mysql_connected: false,
   });
-  if (shouldRelaxFiltersForDryRun()) {
-    logger.warn('FILTER_RELAX_FOR_DRY_RUN ativo — filtros relaxados para permitir simulações em dry run');
-  }
-  if ((process.env.FORCE_VALIDATION_SIMULATION === 'true' || process.env.VALIDATION_SIMULATION === 'true') && config.bot.dryRun) {
-    logger.debug('FORCE_VALIDATION_SIMULATION ativo — 1 simulação forçada a cada 5 min quando token passar no filtro');
-  }
 
   DatabaseClient.initialize(config.database);
   const db = DatabaseClient.getInstance();
@@ -308,8 +301,6 @@ async function main(): Promise<void> {
   let tokensPoolNotFound = 0;
   let tokensInPipeline = 0;
   let lastPipelineSummaryAt = 0;
-  let lastValidationSimulationAt = 0;
-  const forceValidationSimulation = process.env.FORCE_VALIDATION_SIMULATION === 'true' || process.env.VALIDATION_SIMULATION === 'true';
 
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
     logger.debug('TOKEN_SCAN: job recebido', { jobId: job.id, jobName: job.name });
@@ -555,18 +546,6 @@ async function main(): Promise<void> {
         const results = await strategyRegistry.evaluateAll(context);
         let buySignal = strategyRegistry.getBestBuySignal(results);
 
-        // FORCE_BUY_SIGNAL: modo debug temporário — qualquer token que passar o pipeline recebe sinal
-        if (process.env.FORCE_BUY_SIGNAL === 'true') {
-          buySignal = {
-            signal: 'buy',
-            confidence: 0.5,
-            reason: 'forced_debug',
-            suggestedSizeSol: 0.05,
-            triggerType: 'momentum_confirmation',
-          };
-          logger.debug('FORCED_BUY_SIGNAL', { tokenMint });
-        }
-
         // Salvar no Redis para diagnóstico: tokens que passaram o pipeline
         try {
           const skipReasons = results
@@ -714,8 +693,7 @@ async function main(): Promise<void> {
               dryRun,
               strategy: buySignal.triggerType,
             });
-            const strategyId =
-              process.env.FORCE_BUY_SIGNAL === 'true' ? 'forced_debug' : (buySignal.triggerType ?? 'auto');
+            const strategyId = buySignal.triggerType ?? 'auto';
             await queueManager.addJob(QueueName.TRADE_EXECUTE, 'strategy-buy', {
               tradeRequest: {
                 tokenMint: tokenInfo.mintAddress,
@@ -821,34 +799,6 @@ async function main(): Promise<void> {
             liquidity: pool.liquidity.toFixed(2),
           });
 
-          // Modo validação: força 1 simulação a cada 5 min quando dry run + token passou no filtro
-          const dryRun = await getEffectiveDryRun(config);
-          const validationCooldownMs = 5 * 60 * 1000;
-          if (
-            forceValidationSimulation &&
-            dryRun &&
-            pool.liquidity >= 0.5 &&
-            Date.now() - lastValidationSimulationAt > validationCooldownMs
-          ) {
-            lastValidationSimulationAt = Date.now();
-            const validationSizeSol = Math.max(0.05, getTierConfig(config.trading.strategyTier).entry.solSizeMin);
-            logger.debug('VALIDAÇÃO: forçando simulação de compra (dry run)', {
-              tokenMint: tokenInfo.mintAddress.slice(0, 12),
-              amountSol: validationSizeSol.toFixed(4),
-            });
-            await queueManager.addJob(QueueName.TRADE_EXECUTE, 'validation-simulation', {
-              tradeRequest: {
-                tokenMint: tokenInfo.mintAddress,
-                direction: 'buy',
-                amountSol: validationSizeSol,
-                slippageBps: config.trading.defaultSlippageBps,
-                strategyId: 'validation_simulation',
-                dryRun: true,
-                entryScore: filterOutcome.finalEntryScore,
-              },
-              entryScore: filterOutcome.finalEntryScore,
-            } satisfies TradeExecuteJobPayload);
-          }
         }
     }
     } catch (error: unknown) {

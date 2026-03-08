@@ -89,7 +89,7 @@ export class EntryStrategy extends BaseStrategy {
   private passesSignalStack(ctx: StrategyContext): boolean {
     const cfg = this.tierConfig.entry;
     const tokenMint = ctx.tokenInfo.mintAddress.slice(0, 12);
-    const minLiq = parseFloat(process.env.MIN_LIQUIDITY_FOR_SIGNAL ?? '0.5') || 0.5;
+    const minLiq = parseFloat(process.env.MIN_LIQUIDITY_FOR_SIGNAL ?? '1') || 1;
     const minBuys = parseInt(process.env.MIN_BUYS_LAST_60S ?? '1', 10) || 1;
 
     if (ctx.liquidity < minLiq) {

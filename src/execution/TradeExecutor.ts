@@ -96,8 +96,7 @@ export class TradeExecutor {
   ): Promise<TradeResult> {
     const slippageBps = tradeRequest.slippageBps;
 
-    const envDryRun = process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true';
-    if (tradeRequest.dryRun || envDryRun) {
+    if (tradeRequest.dryRun) {
       const entryScore = tradeRequest.entryScore ?? 0;
       const finalSize = tradeRequest.amountSol;
 

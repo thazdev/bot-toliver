@@ -12,7 +12,6 @@ export interface EntryConfig {
   solSizeMax: number;
   slippageTolerancePercent: number;
   maxPriceGainFromLaunch: number;
-  /** Mínimo de compras nos últimos 60s para passar no signal stack. Relaxado em FILTER_RELAX_FOR_DRY_RUN. */
   minBuyTxLast60s?: number;
 }
 
@@ -412,14 +411,14 @@ const SHARED_HOLDER: HolderConfig = {
 
 const CONSERVATIVE: TierConfig = {
   entry: {
-    minLiquiditySol: 5,
+    minLiquiditySol: 2,
     minHolderCount: 10,
     maxTopHolderPercent: 20,
     maxTop5HolderPercent: 40,
     minEntryScore: 75,
-    maxPositionPercent: 1,
-    solSizeMin: 0.05,
-    solSizeMax: 0.2,
+    maxPositionPercent: 3.3,
+    solSizeMin: 0.02,
+    solSizeMax: 0.03,
     slippageTolerancePercent: 3,
     maxPriceGainFromLaunch: 300,
   },
@@ -436,12 +435,12 @@ const CONSERVATIVE: TierConfig = {
     trailingStopDelta: 8,
   },
   sizing: {
-    basePositionPercent: 1,
-    maxSinglePositionPercent: 3,
-    minPositionSol: 0.05,
-    maxConcurrentPositions: 5,
+    basePositionPercent: 2,
+    maxSinglePositionPercent: 3.3,
+    minPositionSol: 0.02,
+    maxConcurrentPositions: 3,
     highConvictionMultiplier: 1.5,
-    lowConvictionMultiplier: 0.5,
+    lowConvictionMultiplier: 0.7,
     highConvictionThreshold: 85,
     lowConvictionMinScore: 45,
   },
@@ -450,8 +449,8 @@ const CONSERVATIVE: TierConfig = {
     maxDrawdownPercent: 15,
     maxWeeklyLossPercent: 20,
     maxExposurePercent: 10,
-    emergencyHaltBalanceSol: 0.5,
-    maxSingleTokenExposurePercent: 3,
+    emergencyHaltBalanceSol: 0.1,
+    maxSingleTokenExposurePercent: 3.3,
     riskPerTradePercent: 0.5,
     maxSlippageEntryPercent: 15,
     maxSlippageExitPercent: 20,
@@ -463,8 +462,8 @@ const CONSERVATIVE: TierConfig = {
   },
   capital: SHARED_CAPITAL,
   liquidity: {
-    minPoolSol: 5,
-    minPoolUsd: 500,
+    minPoolSol: 2,
+    minPoolUsd: 200,
     maxImpactPercent: 3,
     minLiquidityScore: 60,
     minLiquidityAgeSec: 300,
@@ -708,57 +707,8 @@ const TIER_CONFIGS: Record<StrategyTier, TierConfig> = {
   aggressive: AGGRESSIVE,
 };
 
-const isDryRun = (): boolean =>
-  (process.env.BOT_DRY_RUN ?? process.env.DRY_RUN ?? 'true') !== 'false';
-
-export const shouldRelaxFiltersForDryRun = (): boolean =>
-  process.env.FILTER_RELAX_FOR_DRY_RUN === 'true' && isDryRun();
-
 export function getTierConfig(tier: StrategyTier): TierConfig {
-  const base = TIER_CONFIGS[tier];
-  if (!shouldRelaxFiltersForDryRun()) return base;
-
-  // Modo de teste: relaxa filtros para permitir simulações em dry run.
-  // Ative com FILTER_RELAX_FOR_DRY_RUN=true no .env
-  return {
-    ...base,
-    entry: {
-      ...base.entry,
-      minLiquiditySol: Math.min(base.entry.minLiquiditySol, 0.5),
-      minHolderCount: Math.min(base.entry.minHolderCount, 3),
-      minEntryScore: Math.min(base.entry.minEntryScore, 30),
-      maxTopHolderPercent: Math.max(base.entry.maxTopHolderPercent, 50),
-      maxTop5HolderPercent: Math.max(base.entry.maxTop5HolderPercent, 80),
-      minBuyTxLast60s: Math.min(base.entry.minBuyTxLast60s ?? 2, 1),
-      maxPriceGainFromLaunch: Math.max(base.entry.maxPriceGainFromLaunch, 2000),
-    },
-    filter: {
-      ...base.filter,
-      deferTokenAgeSec: 0,
-      minRugScoreStep3: Math.min(base.filter.minRugScoreStep3, 35),
-      minEntryScoreThreshold: Math.min(base.filter.minEntryScoreThreshold, 30),
-      feedbackMinSampleSize: 1,
-      skipBundleDetection: true,
-    },
-    launch: {
-      ...base.launch,
-      phase1MinPoolSol: Math.min(base.launch.phase1MinPoolSol, 0.5),
-      phase1MinRugScore: Math.min(base.launch.phase1MinRugScore, 35),
-      phase2MinHolders: Math.min(base.launch.phase2MinHolders, 5),
-      phase2MinUniqueBuyers: Math.min(base.launch.phase2MinUniqueBuyers, 3),
-    },
-    honeypot: {
-      ...base.honeypot,
-      maxBuyTaxPercent: 95,
-      maxSellTaxPercent: 95,
-      skipHoneypotSimulation: true,
-    },
-    momentum: {
-      ...base.momentum,
-      minVolumeMultiplier: 1.1,
-      minPriceChange5min: 1,
-    },
-  };
+  return TIER_CONFIGS[tier];
 }
 
 export const TIME_EXIT_RULES = {
@@ -820,11 +770,7 @@ export const RUG_SCORE_RULES = {
 
 export const SCAM_RULES = {
   walletAgeRejectHours: 0,
-  walletAgePenaltyHours: parseInt(
-    process.env.SCAM_WALLET_AGE_PENALTY_HOURS ??
-      (process.env.FILTER_RELAX_FOR_DRY_RUN === 'true' ? '0' : '24'),
-    10,
-  ),
+  walletAgePenaltyHours: parseInt(process.env.SCAM_WALLET_AGE_PENALTY_HOURS ?? '24', 10),
   walletAgePenaltyAmount: parseInt(process.env.SCAM_WALLET_AGE_PENALTY_AMOUNT ?? '20', 10),
   walletAgeReduceScoreDays: 7,
   walletAgeReduceScoreAmount: 15,

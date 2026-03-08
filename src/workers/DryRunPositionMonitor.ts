@@ -1,5 +1,5 @@
 /**
- * Monitor de posições dry run — roda a cada 15s quando DRY_RUN=true.
+ * Monitor de posições dry run — roda a cada 15s quando bot está em modo dry-run.
  * Atualiza preço atual, P&L, e fecha posições quando condições de saída são atingidas.
  * Publica tudo no Redis pub/sub (bot:events) para o dashboard consumir via Socket.io.
  */
@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { RedisClient } from '../core/cache/RedisClient.js';
 import { DatabaseClient } from '../core/database/DatabaseClient.js';
 import { getPriceInSOL } from '../services/JupiterPriceService.js';
+import { getEffectiveDryRun } from '../config/DryRunResolver.js';
 import {
   getOpenPositionIds,
   getPosition,
@@ -20,7 +21,7 @@ import {
 import type { PoolScanner } from '../scanners/PoolScanner.js';
 
 const HOLD_TIMEOUT_MS = 7_200_000; // 2 horas
-const TOTAL_CAPITAL_SOL = parseFloat(process.env.TOTAL_CAPITAL_SOL ?? '0.9') || 0.9;
+const TOTAL_CAPITAL_SOL = parseFloat(process.env.TOTAL_CAPITAL_SOL ?? '0.9');
 
 export type DryRunMonitorOptions = {
   poolScanner?: PoolScanner | null;
@@ -89,7 +90,7 @@ async function publishSnapshot(): Promise<void> {
 }
 
 async function monitorDryRunPositions(): Promise<void> {
-  const isDryRun = process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true';
+  const isDryRun = await getEffectiveDryRun();
   if (!isDryRun) return;
 
   const openIds = await getOpenPositionIds();
@@ -213,9 +214,6 @@ async function monitorDryRunPositions(): Promise<void> {
 let monitorInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startDryRunPositionMonitor(options?: DryRunMonitorOptions): void {
-  const isDryRun = process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true';
-  if (!isDryRun) return;
-
   if (monitorInterval) return;
 
   if (options?.poolScanner) {

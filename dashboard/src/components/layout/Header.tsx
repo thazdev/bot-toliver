@@ -13,7 +13,7 @@ export function Header() {
   const { data: session } = useSession();
   const [cachedSol, setCachedSol] = useState<number | null>(null);
 
-  const { data: health } = useSWR<BotHealth>('/api/health', fetcher, { refreshInterval: 15_000 });
+  const { data: health } = useSWR<BotHealth>('/api/health', fetcher, { refreshInterval: 5_000 });
   const { data: balance, error: balanceError } = useSWR<WalletBalance>(
     '/api/wallet/balance',
     fetcher,
@@ -45,31 +45,33 @@ export function Header() {
 
   const displaySol = balance?.sol ?? cachedSol;
 
-  const statusClass =
-    health?.status === 'RUNNING'
-      ? 'status-running'
-      : health?.status === 'DRY_RUN'
-        ? 'status-dryrun'
-        : health?.status === 'PAUSED'
-          ? 'status-halted'
-          : 'status-halted';
+  const statusColor =
+    health?.status === 'RUNNING' ? 'bg-success/20 text-success border-success/30'
+    : health?.status === 'DRY_RUN' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+    : health?.status === 'HALTED' ? 'bg-danger/20 text-danger border-danger/30'
+    : 'bg-slate-500/20 text-slate-400 border-slate-500/30';
 
-  const statusLabel = health?.status ?? 'UNKNOWN';
+  const modeColor = health?.mode === 'real'
+    ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+    : 'bg-blue-500/20 text-blue-400 border-blue-500/30';
 
   return (
     <header className="mb-6 flex items-center justify-between">
-      <div className="flex items-center gap-4">
-        <h1 className="text-lg font-bold text-white">Overview</h1>
-        <span className={statusClass}>
+      <div className="flex items-center gap-3">
+        <h1 className="text-lg font-bold text-white">Dashboard</h1>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusColor}`}>
           <Activity className="h-3 w-3" />
-          {statusLabel}
+          {health?.status ?? 'UNKNOWN'}
+        </span>
+        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${modeColor}`}>
+          {health?.mode === 'real' ? 'REAL' : 'DRY-RUN'}
         </span>
       </div>
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-slate-400" title={session?.user?.walletAddress ? `Wallet: ${session.user.walletAddress}` : undefined}>
+        <div className="flex items-center gap-2 text-sm text-slate-400">
           <Wallet className="h-4 w-4 shrink-0" />
-          <span className="font-medium text-slate-200" title={balanceError?.message}>
-            {displaySol != null ? `${displaySol.toFixed(4)} SOL` : balanceError ? 'Erro' : '—'}
+          <span className="font-medium text-slate-200">
+            {displaySol != null ? `${displaySol.toFixed(4)} SOL` : balanceError ? 'Erro' : '\u2014'}
           </span>
         </div>
         <div className="h-4 w-px bg-card-border" />

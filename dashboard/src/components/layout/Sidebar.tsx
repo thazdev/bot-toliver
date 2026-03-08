@@ -7,19 +7,15 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard,
   History,
-  BarChart3,
   Settings,
   LogOut,
   Bot,
-  Activity,
 } from 'lucide-react';
 
 const navItems = [
-  { href: '/', label: 'Overview', icon: LayoutDashboard },
-  { href: '/diagnostics', label: 'Diagnostics', icon: Activity },
-  { href: '/positions', label: 'Histórico', icon: History },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/trades', label: 'Trades', icon: History },
+  { href: '/config', label: 'Config', icon: Settings },
 ];
 
 export function Sidebar() {

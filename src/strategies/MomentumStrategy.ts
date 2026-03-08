@@ -123,10 +123,6 @@ export class MomentumStrategy extends BaseStrategy {
   }
 
   isWashTrading(context: StrategyContext): boolean {
-    if (process.env.SKIP_WASH_TRADING_CHECK === 'true') {
-      return false;
-    }
-
     const vol = context.volumeContext;
     const minWallets = parseInt(process.env.WASH_MIN_UNIQUE_WALLETS ?? '1', 10) || 1;
     const minBuyRatio = parseFloat(process.env.WASH_MIN_BUY_RATIO ?? '0.15') || 0.15;

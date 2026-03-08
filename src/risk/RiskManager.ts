@@ -52,11 +52,6 @@ export class RiskManager {
 
   async preTradeCheck(tradeRequest: TradeRequest): Promise<RiskCheckResult> {
     try {
-      const isDryRun = tradeRequest.dryRun || this.config.bot.dryRun;
-      if (isDryRun) {
-        return { approved: true, reason: 'DRY_RUN mode active — trade will be simulated' };
-      }
-
       if (this.circuitBreaker.isTripped()) {
         return { approved: false, reason: 'circuit_breaker_tripped' };
       }

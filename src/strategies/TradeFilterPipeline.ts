@@ -86,11 +86,7 @@ export class TradeFilterPipeline {
       // Non-critical: diagnóstico
     }
 
-    if (process.env.SKIP_STAGE1_FOR_DEBUG === 'true') {
-      logger.debug('STAGE1_SKIPPED_DEBUG');
-      steps.push({ step: 'hard_reject', passed: true, reason: 'SKIP_STAGE1_FOR_DEBUG', durationMs: 0 });
-      telemetry.stage1_result = 'skipped (debug)';
-    } else if (this.emergencyHalt) {
+    if (this.emergencyHalt) {
       const step = { step: 'emergency_halt', passed: false, reason: 'Emergency halt active via admin override', durationMs: 0 };
       steps.push(step);
       telemetry.stage1_result = `rejected: ${step.reason}`;

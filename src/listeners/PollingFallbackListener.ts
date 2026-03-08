@@ -22,32 +22,43 @@ interface DiscoveredToken {
 /**
  * Fallback quando WebSocket (onLogs) não recebe eventos.
  * Usa getSignaturesForAddress + getTransaction para detectar novos pools.
- * Ativar com POLLING_FALLBACK_ENABLED=true.
+ * Ativado automaticamente quando WebSocket está desconectado.
  */
 export class PollingFallbackListener extends BaseListener {
   private timer: ReturnType<typeof setInterval> | null = null;
   private connectionManager: ConnectionManager;
   private seenSignatures = new Set<string>();
+  private _enabled = false;
 
   constructor(queueManager: QueueManager) {
     super('PollingFallbackListener', queueManager);
     this.connectionManager = ConnectionManager.getInstance();
   }
 
-  async start(): Promise<void> {
-    const enabled = /^(true|1|yes)$/i.test(String(process.env.POLLING_FALLBACK_ENABLED ?? '').trim());
-    if (!enabled) {
-      logger.debug('PollingFallbackListener: desativado. Ative com POLLING_FALLBACK_ENABLED=true');
-      return;
+  /** Ativa o polling fallback (chamado quando WebSocket cai) */
+  enable(): void {
+    if (this._enabled) return;
+    this._enabled = true;
+    if (this.isActive && !this.timer) {
+      this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+      logger.warn('PollingFallbackListener: fallback ATIVADO (WebSocket indisponível)');
     }
+  }
 
+  /** Desativa o polling fallback (chamado quando WebSocket reconecta) */
+  disable(): void {
+    if (!this._enabled) return;
+    this._enabled = false;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    logger.warn('PollingFallbackListener: fallback DESATIVADO (WebSocket reconectado)');
+  }
+
+  async start(): Promise<void> {
     this.isActive = true;
-    logger.warn('PollingFallbackListener: INICIADO (fallback ativo)', {
-      intervalMs: POLL_INTERVAL_MS,
-      programs: ['Raydium AMM', 'PumpFun', 'Raydium CLMM'],
-    });
-    this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
-    setTimeout(() => this.poll().catch((e) => logger.debug('PollingFallbackListener: erro no primeiro poll', { err: String(e) })), 10_000);
+    logger.debug('PollingFallbackListener: pronto (aguardando ativação automática se WebSocket cair)');
   }
 
   private async poll(): Promise<void> {

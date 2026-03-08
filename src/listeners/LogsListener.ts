@@ -300,7 +300,7 @@ export class LogsListener extends BaseListener {
   private async emitPoolCreated(detected: DetectedToken): Promise<void> {
     const tokenMint = detected.mintAddress!;
     const poolAddress = detected.poolAddress ?? '';
-    const minLiq = parseFloat(process.env.MIN_LIQUIDITY_SOL ?? '0');
+    const minLiq = parseFloat(process.env.MIN_LIQUIDITY_SOL ?? '2');
     const liquiditySol = detected.initialLiquiditySOL ?? 0;
 
     if (minLiq > 0 && liquiditySol < minLiq) {
