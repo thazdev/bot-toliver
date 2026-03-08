@@ -95,6 +95,9 @@ async function main(): Promise<void> {
   if (shouldRelaxFiltersForDryRun()) {
     logger.warn('FILTER_RELAX_FOR_DRY_RUN ativo — filtros relaxados para permitir simulações em dry run');
   }
+  if ((process.env.FORCE_VALIDATION_SIMULATION === 'true' || process.env.VALIDATION_SIMULATION === 'true') && config.bot.dryRun) {
+    logger.info('FORCE_VALIDATION_SIMULATION ativo — 1 simulação forçada a cada 5 min quando token passar no filtro');
+  }
 
   DatabaseClient.initialize(config.database);
   const db = DatabaseClient.getInstance();
@@ -210,6 +213,8 @@ async function main(): Promise<void> {
   let tokensPoolNotFound = 0;
   let tokensInPipeline = 0;
   let lastPipelineSummaryAt = 0;
+  let lastValidationSimulationAt = 0;
+  const forceValidationSimulation = process.env.FORCE_VALIDATION_SIMULATION === 'true' || process.env.VALIDATION_SIMULATION === 'true';
 
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
     logger.info('TOKEN_SCAN: job recebido', { jobId: job.id, jobName: job.name });
@@ -503,6 +508,33 @@ async function main(): Promise<void> {
             bestConfidence: buySignal?.confidence ?? 0,
             skipReasons,
           });
+
+          // Modo validação: força 1 simulação a cada 5 min quando dry run + token passou no filtro
+          const dryRun = await getEffectiveDryRun(config);
+          const validationCooldownMs = 5 * 60 * 1000;
+          if (
+            forceValidationSimulation &&
+            dryRun &&
+            pool.liquidity >= 0.5 &&
+            Date.now() - lastValidationSimulationAt > validationCooldownMs
+          ) {
+            lastValidationSimulationAt = Date.now();
+            const validationSizeSol = Math.max(0.05, getTierConfig(config.trading.strategyTier).entry.solSizeMin);
+            logger.info('VALIDAÇÃO: forçando simulação de compra (dry run)', {
+              tokenMint: tokenInfo.mintAddress.slice(0, 12),
+              amountSol: validationSizeSol.toFixed(4),
+            });
+            await queueManager.addJob(QueueName.TRADE_EXECUTE, 'validation-simulation', {
+              tradeRequest: {
+                tokenMint: tokenInfo.mintAddress,
+                direction: 'buy',
+                amountSol: validationSizeSol,
+                slippageBps: config.trading.defaultSlippageBps,
+                strategyId: 'validation_simulation',
+                dryRun: true,
+              },
+            } satisfies TradeExecuteJobPayload);
+          }
         }
     }
     } catch (error: unknown) {
