@@ -36,6 +36,25 @@ export class TradeRepository {
    */
   async insert(trade: TradeResult): Promise<void> {
     try {
+      const rawPriceSol =
+        trade.inputAmount > 0 && isFinite(trade.outputAmount)
+          ? trade.outputAmount / trade.inputAmount
+          : 0;
+      const safePriceSol =
+        typeof rawPriceSol === 'number' &&
+        isFinite(rawPriceSol) &&
+        rawPriceSol > 0 &&
+        rawPriceSol <= 999_999.999
+        ? rawPriceSol
+        : 0.000001;
+
+      const safeAmountSol = isFinite(trade.tradeRequest.amountSol)
+        ? trade.tradeRequest.amountSol
+        : 0;
+      const safeOutputAmount = isFinite(trade.outputAmount) ? trade.outputAmount : 0;
+      const safePriceImpact = isFinite(trade.priceImpact) ? trade.priceImpact : 0;
+      const safeFee = isFinite(trade.fee) ? trade.fee : 0;
+
       await this.db.execute(
         `INSERT INTO trades (
           token_mint, direction, status, amount_sol, output_amount,
@@ -46,11 +65,11 @@ export class TradeRepository {
           trade.tradeRequest.tokenMint,
           trade.tradeRequest.direction,
           trade.status,
-          trade.tradeRequest.amountSol,
-          trade.outputAmount,
-          trade.inputAmount > 0 ? trade.outputAmount / trade.inputAmount : 0,
-          trade.priceImpact,
-          trade.fee,
+          safeAmountSol,
+          safeOutputAmount,
+          safePriceSol,
+          safePriceImpact,
+          safeFee,
           trade.txSignature,
           trade.tradeRequest.strategyId,
           trade.tradeRequest.dryRun,

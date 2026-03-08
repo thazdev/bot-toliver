@@ -110,20 +110,24 @@ export class TradeExecutor {
 
       // DRY RUN: simular quote sem chamar Jupiter (tokens novos podem não estar indexados)
       const amountLamports = solToLamports(tradeRequest.amountSol).toNumber();
+      const amountSol = tradeRequest.amountSol;
       const simulatedSlippage = 0.03;
+      // Garantir valores válidos para price_sol (DECIMAL 18,12): outputAmount/inputAmount deve ser < 1e6
+      // Simulamos ~1000 tokens por SOL para manter ratio dentro do range
+      const tokensPerSol = 1000;
       const quote =
         tradeRequest.direction === 'buy'
           ? {
               inputMint: 'So11111111111111111111111111111111111111112',
               inAmount: amountLamports.toString(),
               outputMint: tradeRequest.tokenMint,
-              outAmount: Math.floor(amountLamports * (1 - simulatedSlippage) * 1000).toString(),
+              outAmount: Math.floor(amountSol * (1 - simulatedSlippage) * tokensPerSol).toString(),
               priceImpactPct: (simulatedSlippage * 100).toFixed(4),
               routePlan: [] as unknown[],
             }
           : {
               inputMint: tradeRequest.tokenMint,
-              inAmount: (amountLamports * 1000).toString(),
+              inAmount: (amountLamports * tokensPerSol).toString(),
               outputMint: 'So11111111111111111111111111111111111111112',
               outAmount: Math.floor(amountLamports * (1 - simulatedSlippage)).toString(),
               priceImpactPct: (simulatedSlippage * 100).toFixed(4),
