@@ -18,10 +18,10 @@ export const dashboardConfig = {
   },
   bot: {
     walletAddress: process.env.BOT_WALLET_ADDRESS || '',
-    strategyTier: process.env.BOT_STRATEGY_TIER || 'conservative',
-    maxPositionSizeSol: Number(process.env.BOT_MAX_POSITION_SIZE_SOL) || 0.05,
-    stopLossPercent: Number(process.env.BOT_STOP_LOSS_PERCENT) || 15,
-    dryRun: false, // actual mode comes from Redis bot:mode at runtime
+    strategyTier: process.env.STRATEGY_TIER || 'conservative',
+    maxPositionSizeSol: Number(process.env.MAX_POSITION_SIZE_SOL) || 0.03,
+    stopLossPercent: Number(process.env.STOP_LOSS_PERCENT) || 15,
+    dryRun: false,
   },
   jupiter: {
     priceUrl: 'https://price.jup.ag/v4/price',

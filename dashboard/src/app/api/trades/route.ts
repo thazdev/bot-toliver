@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 
     const where: Record<string, unknown> = {};
 
-    if (mode === 'dry_run') {
+    if (mode === 'dry_run' || mode === 'dry-run') {
       where.dryRun = true;
     } else if (mode === 'real') {
       where.dryRun = false;
@@ -35,15 +35,24 @@ export async function GET(request: Request) {
       where.executedAt = dateFilter;
     }
 
-    const [trades, total] = await Promise.all([
-      prisma.trade.findMany({
-        where,
-        orderBy: { executedAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      prisma.trade.count({ where }),
-    ]);
+    let trades, total;
+    try {
+      [trades, total] = await Promise.all([
+        prisma.trade.findMany({
+          where,
+          orderBy: { executedAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        prisma.trade.count({ where }),
+      ]);
+    } catch (dbErr) {
+      const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      if (msg.includes("doesn't exist") || msg.includes('does not exist')) {
+        return NextResponse.json({ trades: [], total: 0, page });
+      }
+      throw dbErr;
+    }
 
     return NextResponse.json({ trades, total, page });
   } catch (err) {

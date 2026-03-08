@@ -76,10 +76,16 @@ export class BotLifecycle {
 
     await this.subscriber.subscribe(REDIS_COMMAND_CHANNEL);
 
-    this.subscriber.on('message', (_channel: string, message: string) => {
-      if (message === 'start' && this.state === 'STOPPED') {
+    this.subscriber.on('message', (_channel: string, raw: string) => {
+      let action = raw;
+      try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.action === 'string') action = parsed.action;
+      } catch {}
+
+      if (action === 'start' && this.state === 'STOPPED') {
         void this.start();
-      } else if (message === 'stop' && this.state === 'RUNNING') {
+      } else if (action === 'stop' && this.state === 'RUNNING') {
         void this.stop();
       }
     });
