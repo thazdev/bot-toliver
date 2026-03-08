@@ -2,6 +2,7 @@ import { PublicKey, type Logs } from '@solana/web3.js';
 import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
 import { isBotEnabled } from '../config/BotEnabledResolver.js';
+import { isConnectionsPaused } from '../config/ConnectionsPausedResolver.js';
 import { logger } from '../utils/logger.js';
 import { RAYDIUM_AMM_V4, PUMP_FUN_PROGRAM, WSOL_MINT } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
@@ -55,7 +56,7 @@ export class LiquidityListener extends BaseListener {
   }
 
   private async processLiquidityLogs(programName: string, logs: Logs): Promise<void> {
-    if (!(await isBotEnabled())) return;
+    if (isConnectionsPaused() || !(await isBotEnabled())) return;
     const logMessages = logs.logs;
     const signature = logs.signature;
 
@@ -98,6 +99,7 @@ export class LiquidityListener extends BaseListener {
    * Unsubscribes from all liquidity event subscriptions.
    */
   async stop(): Promise<void> {
+    this.isActive = false;
     const connection = this.connectionManager.getSubscriptionConnection();
     for (const subId of this.subscriptionIds) {
       try {

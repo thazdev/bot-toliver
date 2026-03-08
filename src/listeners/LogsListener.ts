@@ -3,6 +3,7 @@ import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
 import { BotHealthMonitor } from '../monitoring/BotHealthMonitor.js';
 import { isBotEnabled } from '../config/BotEnabledResolver.js';
+import { isConnectionsPaused } from '../config/ConnectionsPausedResolver.js';
 import { logger } from '../utils/logger.js';
 import {
   RAYDIUM_AMM_V4,
@@ -67,7 +68,7 @@ export class LogsListener extends BaseListener {
   }
 
   private async processLogs(programName: string, logs: Logs): Promise<void> {
-    if (!(await isBotEnabled())) return;
+    if (!this.isActive || isConnectionsPaused() || !(await isBotEnabled())) return;
     BotHealthMonitor.recordEvent();
     this.logBatchCount++;
     const now = Date.now();
@@ -228,6 +229,10 @@ export class LogsListener extends BaseListener {
 
       const poolAddress = discovered.poolAddress ?? '';
       const tokenMint = discovered.tokenMint ?? '';
+      if (!tokenMint || tokenMint.length < 32) {
+        logger.debug('LogsListener: ignorando discovery sem tokenMint', { poolAddress: poolAddress.slice(0, 8) });
+        return;
+      }
       const liquiditySol = discovered.initialLiquiditySOL ?? 0;
       const minLiq = parseFloat(process.env.MIN_LIQUIDITY_SOL ?? '0');
       if (minLiq > 0 && liquiditySol < minLiq) {
@@ -264,6 +269,7 @@ export class LogsListener extends BaseListener {
   }
 
   async stop(): Promise<void> {
+    this.isActive = false;
     const connection = this.connectionManager.getSubscriptionConnection();
     for (const subId of this.subscriptionIds) {
       try {

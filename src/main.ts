@@ -49,6 +49,7 @@ import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
 import { getTierConfig, shouldRelaxFiltersForDryRun } from './strategies/config.js';
 import { getEffectiveDryRun } from './config/DryRunResolver.js';
 import { isBotEnabled, isBotEnabledNoCache } from './config/BotEnabledResolver.js';
+import { setConnectionsPaused } from './config/ConnectionsPausedResolver.js';
 import { AlertService } from './alerts/AlertService.js';
 import { StatsTracker } from './stats/StatsTracker.js';
 import { StatsSnapshot } from './stats/StatsSnapshot.js';
@@ -202,6 +203,7 @@ async function main(): Promise<void> {
     ],
   });
 
+  let lastTokenScanDiagAt = 0;
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
     if (!(await isBotEnabled())) {
       return;
@@ -209,13 +211,34 @@ async function main(): Promise<void> {
     BotHealthMonitor.recordEvent();
     const payload = job.data as TokenScanJobPayload;
     const tokenInfo = await tokenScanner.processToken(payload);
-    if (tokenInfo) {
-      statsTracker.incrementTokensScanned();
-      const poolAddress = payload.tokenInfo.poolAddress?.trim();
-      const pool = await poolScanner.scanForPool(tokenInfo.mintAddress, poolAddress
-        ? { poolAddress, dex: payload.tokenInfo.poolDex ?? 'pumpfun' }
-        : undefined);
-      if (pool) {
+    if (!tokenInfo) {
+      const now = Date.now();
+      if (now - lastTokenScanDiagAt > 30_000) {
+        lastTokenScanDiagAt = now;
+        logger.info('TOKEN_SCAN: token ignorado (cache ou mint não encontrado)', {
+          mint: payload.tokenInfo.mintAddress?.slice(0, 12) ?? 'vazio',
+          source: payload.source,
+        });
+      }
+      return;
+    }
+    statsTracker.incrementTokensScanned();
+    const poolAddress = payload.tokenInfo.poolAddress?.trim();
+    const pool = await poolScanner.scanForPool(tokenInfo.mintAddress, poolAddress
+      ? { poolAddress, dex: payload.tokenInfo.poolDex ?? 'pumpfun' }
+      : undefined);
+    if (!pool) {
+      const now = Date.now();
+      if (now - lastTokenScanDiagAt > 30_000) {
+        lastTokenScanDiagAt = now;
+        logger.info('TOKEN_SCAN: pool não encontrado', {
+          mint: tokenInfo.mintAddress.slice(0, 12),
+          poolAddress: poolAddress?.slice(0, 12),
+        });
+      }
+      return;
+    }
+    {
         const tokenAgeSec = (Date.now() - tokenInfo.createdAt.getTime()) / 1000;
         const { holderData: fetchedHolderData, fromApi } = await holderVolumeFetcher.fetchHolderData(tokenInfo.mintAddress);
         const holderData: HolderData = fromApi ? fetchedHolderData : {
@@ -436,7 +459,6 @@ async function main(): Promise<void> {
             bestConfidence: buySignal?.confidence ?? 0,
           });
         }
-      }
     }
   }, 3);
 
@@ -557,6 +579,7 @@ async function main(): Promise<void> {
     }
   } else {
     connectionsPaused = true;
+    setConnectionsPaused(true);
     connectionManager.stop();
     connectionManager.disconnectSubscription();
     if (webSocketManager) {
@@ -596,6 +619,7 @@ async function main(): Promise<void> {
       const enabled = await isBotEnabledNoCache();
       if (!enabled && !connectionsPaused) {
         connectionsPaused = true;
+        setConnectionsPaused(true);
         logger.info('Bot desligado — pausando conexões Helius (WebSocket + RPC)');
         for (const listener of listeners) {
           await listener.stop();
@@ -607,6 +631,7 @@ async function main(): Promise<void> {
         }
       } else if (enabled && connectionsPaused) {
         connectionsPaused = false;
+        setConnectionsPaused(false);
         logger.info('Bot ligado — retomando conexões Helius');
         connectionManager.reconnectSubscription();
         connectionManager.startHealthCheck();

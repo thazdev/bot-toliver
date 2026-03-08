@@ -57,6 +57,10 @@ export abstract class BaseListener {
         }
         case 'POOL_CREATED': {
           const d = event.data as import('../types/pool.types.js').PoolInfo;
+          if (!d.tokenMint || d.tokenMint.length < 32) {
+            logger.debug('BaseListener: ignorando POOL_CREATED sem tokenMint válido', { poolAddress: d.poolAddress?.slice(0, 8) });
+            break;
+          }
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'pool-created', {
             tokenInfo: {
               mintAddress: d.tokenMint,

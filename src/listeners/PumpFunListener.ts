@@ -2,6 +2,7 @@ import { PublicKey, type Logs } from '@solana/web3.js';
 import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
 import { isBotEnabled } from '../config/BotEnabledResolver.js';
+import { isConnectionsPaused } from '../config/ConnectionsPausedResolver.js';
 import { logger } from '../utils/logger.js';
 import { PUMP_FUN_PROGRAM } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
@@ -47,7 +48,7 @@ export class PumpFunListener extends BaseListener {
   }
 
   private async processPumpFunLogs(logs: Logs): Promise<void> {
-    if (!(await isBotEnabled())) return;
+    if (isConnectionsPaused() || !(await isBotEnabled())) return;
     const logMessages = logs.logs;
     const signature = logs.signature;
 
@@ -96,6 +97,7 @@ export class PumpFunListener extends BaseListener {
    * Unsubscribes from Pump.fun events.
    */
   async stop(): Promise<void> {
+    this.isActive = false;
     if (this.subscriptionId !== null) {
       const connection = this.connectionManager.getSubscriptionConnection();
       try {
