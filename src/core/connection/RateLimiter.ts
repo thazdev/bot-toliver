@@ -20,10 +20,15 @@ export class RateLimiter {
       reservoirRefreshAmount: config.rpcRequestsPerSecond,
     });
 
+    let lastWarnAt = 0;
     this.limiter.on('depleted', () => {
       const queued = this.limiter.queued();
       if (queued > QUEUE_RATE_LIMIT_WARNING_THRESHOLD) {
-        logger.warn('Rate limiter queue growing large', { queuedRequests: queued });
+        const now = Date.now();
+        if (now - lastWarnAt > 30_000) {
+          lastWarnAt = now;
+          logger.warn('Rate limiter queue growing large', { queuedRequests: queued });
+        }
       }
     });
   }

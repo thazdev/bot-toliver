@@ -24,6 +24,7 @@ export class LogsListener extends BaseListener {
   private connectionManager: ConnectionManager;
   private logBatchCount = 0;
   private lastLogInfoAt = 0;
+  private lastDiscoveryLogAt = 0;
 
   constructor(queueManager: QueueManager) {
     super('LogsListener', queueManager);
@@ -196,19 +197,27 @@ export class LogsListener extends BaseListener {
 
       const latencyMs = Date.now() - (blockTime * 1000);
 
-      logger.info('LogsListener: new token discovered', {
-        source,
-        tokenMint: (discovered.tokenMint ?? '').slice(0, 8),
-        poolAddress: (discovered.poolAddress ?? '').slice(0, 8),
-        blockTime,
-        initialLiquiditySOL: discovered.initialLiquiditySOL ?? 0,
-        discoveryLatencyMs: latencyMs,
-        processLatencyMs: Date.now() - processStartMs,
-        signature: signature.slice(0, 16),
-      });
+      const now = Date.now();
+      if (now - this.lastDiscoveryLogAt > 5_000) {
+        this.lastDiscoveryLogAt = now;
+        logger.info('LogsListener: new token discovered', {
+          source,
+          tokenMint: (discovered.tokenMint ?? '').slice(0, 8),
+          poolAddress: (discovered.poolAddress ?? '').slice(0, 8),
+          initialLiquiditySOL: discovered.initialLiquiditySOL ?? 0,
+          discoveryLatencyMs: latencyMs,
+        });
+      } else {
+        logger.debug('LogsListener: new token discovered', {
+          source,
+          tokenMint: (discovered.tokenMint ?? '').slice(0, 8),
+          initialLiquiditySOL: discovered.initialLiquiditySOL ?? 0,
+        });
+      }
 
-      if (latencyMs > 2000) {
-        logger.warn('LogsListener: discovery latency exceeds 2s target', {
+      const latencyThreshold = parseInt(process.env.DISCOVERY_LATENCY_WARN_MS ?? '5000', 10);
+      if (latencyMs > latencyThreshold) {
+        logger.debug('LogsListener: discovery latency alta (queue pode estar cheia)', {
           latencyMs,
           source,
           tokenMint: (discovered.tokenMint ?? '').slice(0, 8),
@@ -217,38 +226,31 @@ export class LogsListener extends BaseListener {
 
       const poolAddress = discovered.poolAddress ?? '';
       const tokenMint = discovered.tokenMint ?? '';
+      const liquiditySol = discovered.initialLiquiditySOL ?? 0;
+      const minLiq = parseFloat(process.env.MIN_LIQUIDITY_SOL ?? '0');
+      if (minLiq > 0 && liquiditySol < minLiq) {
+        logger.debug('LogsListener: token ignorado (liquidez abaixo do mínimo)', {
+          liquiditySol,
+          minLiquiditySol: minLiq,
+          tokenMint: tokenMint.slice(0, 8),
+        });
+        return;
+      }
+
       const dex: 'pumpfun' | 'raydium' = source === 'pumpfun' ? 'pumpfun' : 'raydium';
       const poolData: import('../types/pool.types.js').PoolInfo = {
         poolAddress,
         tokenMint,
         quoteMint: '',
         dex,
-        liquidity: discovered.initialLiquiditySOL ?? 0,
+        liquidity: liquiditySol,
         price: 0,
         volume24h: 0,
         createdAt: new Date(blockTime * 1000),
         isActive: true,
       };
+      // Emite apenas POOL_CREATED (evita job duplicado — antes emitíamos POOL_CREATED + TOKEN_DETECTED)
       this.onEvent({ type: 'POOL_CREATED', timestamp: blockTime * 1000, data: poolData });
-      if (tokenMint) {
-        const tokenData: import('../types/token.types.js').TokenInfo = {
-          mintAddress: tokenMint,
-          poolAddress: poolAddress || undefined,
-          dex,
-          symbol: '',
-          name: '',
-          decimals: 0,
-          supply: '0',
-          createdAt: new Date(blockTime * 1000),
-          source,
-          initialLiquidity: discovered.initialLiquiditySOL ?? 0,
-          initialPrice: 0,
-          isMutable: false,
-          hasFreezable: false,
-          metadataUri: '',
-        };
-        this.onEvent({ type: 'TOKEN_DETECTED', timestamp: blockTime * 1000, data: tokenData });
-      }
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error('LogsListener: failed to fetch block time and emit', {
