@@ -12,7 +12,7 @@ model User {
   username      String   @unique @db.VarChar(64)
   password      String   @db.VarChar(255)
   displayName   String   @map("display_name") @db.VarChar(128)
-  walletAddress String   @map("wallet_address") @db.VarChar(64)
+  walletAddress String   @map("wallet_address") @db.VarChar(128)
   tier          String   @default("admin") @db.VarChar(32)
   createdAt     DateTime @default(now()) @map("created_at")
 
