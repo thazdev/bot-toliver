@@ -10,9 +10,12 @@ import type { QueueManager } from '../core/queue/QueueManager.js';
  * Listens for Pump.fun program log events.
  * Detects 'create' and 'buy' instructions on the bonding curve.
  */
+const LOG_THROTTLE_MS = 10_000;
+
 export class PumpFunListener extends BaseListener {
   private subscriptionId: number | null = null;
   private connectionManager: ConnectionManager;
+  private lastCreateLogAt = 0;
 
   constructor(queueManager: QueueManager) {
     super('PumpFunListener', queueManager);
@@ -56,7 +59,13 @@ export class PumpFunListener extends BaseListener {
     );
 
     if (hasCreate) {
-      logger.info('Pump.fun token creation detected', { signature });
+      const now = Date.now();
+      if (now - this.lastCreateLogAt > LOG_THROTTLE_MS) {
+        this.lastCreateLogAt = now;
+        logger.info('Pump.fun token creation detected', { signature });
+      } else {
+        logger.debug('Pump.fun token creation detected', { signature });
+      }
 
       this.onEvent({
         type: 'TOKEN_DETECTED',

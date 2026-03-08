@@ -6,6 +6,8 @@ import { logger } from '../utils/logger.js';
 import { RAYDIUM_AMM_V4, PUMP_FUN_PROGRAM, WSOL_MINT } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
 
+const LOG_THROTTLE_MS = 10_000;
+
 /**
  * Monitors AddLiquidity events on both Raydium and Pump.fun.
  * Emits POOL_CREATED events with pool details to the queue.
@@ -13,6 +15,7 @@ import type { QueueManager } from '../core/queue/QueueManager.js';
 export class LiquidityListener extends BaseListener {
   private subscriptionIds: number[] = [];
   private connectionManager: ConnectionManager;
+  private lastLiquidityLogAt = 0;
 
   constructor(queueManager: QueueManager) {
     super('LiquidityListener', queueManager);
@@ -66,7 +69,13 @@ export class LiquidityListener extends BaseListener {
       return;
     }
 
-    logger.info('Liquidity add detected', { program: programName, signature });
+    const now = Date.now();
+    if (now - this.lastLiquidityLogAt > LOG_THROTTLE_MS) {
+      this.lastLiquidityLogAt = now;
+      logger.info('Liquidity add detected', { program: programName, signature });
+    } else {
+      logger.debug('Liquidity add detected', { program: programName, signature });
+    }
 
     this.onEvent({
       type: 'POOL_CREATED',

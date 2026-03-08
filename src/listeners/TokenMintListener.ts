@@ -6,6 +6,8 @@ import { logger } from '../utils/logger.js';
 import { TOKEN_PROGRAM_ID } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
 
+const LOG_THROTTLE_MS = 10_000;
+
 /**
  * Monitors the SPL Token program for InitializeMint instructions.
  * Extracts mint address, decimals, freeze authority, and mint authority.
@@ -13,6 +15,7 @@ import type { QueueManager } from '../core/queue/QueueManager.js';
 export class TokenMintListener extends BaseListener {
   private subscriptionId: number | null = null;
   private connectionManager: ConnectionManager;
+  private lastMintLogAt = 0;
 
   constructor(queueManager: QueueManager) {
     super('TokenMintListener', queueManager);
@@ -56,7 +59,13 @@ export class TokenMintListener extends BaseListener {
       return;
     }
 
-    logger.info('New token mint detected', { signature });
+    const now = Date.now();
+    if (now - this.lastMintLogAt > LOG_THROTTLE_MS) {
+      this.lastMintLogAt = now;
+      logger.info('New token mint detected', { signature });
+    } else {
+      logger.debug('New token mint detected', { signature });
+    }
 
     this.onEvent({
       type: 'TOKEN_DETECTED',
