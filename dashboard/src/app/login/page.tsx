@@ -35,7 +35,7 @@ export default function LoginPage() {
         password,
         redirect: true,
         callbackUrl: '/',
-      });
+      }) as { ok?: boolean; error?: string; status?: number; url?: string } | undefined;
 
       debugLog('2-SIGNIN-RESPONSE', {
         ok: res?.ok,
