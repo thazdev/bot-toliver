@@ -51,7 +51,8 @@ export class RiskManager {
   }
 
   async preTradeCheck(tradeRequest: TradeRequest): Promise<RiskCheckResult> {
-    if (tradeRequest.dryRun) {
+    const isDryRun = tradeRequest.dryRun || this.config.bot.dryRun;
+    if (isDryRun) {
       return { approved: true, reason: 'DRY_RUN mode active — trade will be simulated' };
     }
 
@@ -120,15 +121,37 @@ export class RiskManager {
       return { approved: false, reason: `Total exposure ${(totalExposure + tradeRequest.amountSol).toFixed(4)} SOL would exceed max ${maxExposure.toFixed(4)} SOL (${riskCfg.maxExposurePercent}%)` };
     }
 
-    const maxSinglePosition = this.config.trading.totalCapitalSol * (riskCfg.maxSingleTokenExposurePercent / 100);
+    const totalCapital = this.config.trading.totalCapitalSol;
+    const maxSinglePosition = totalCapital * (riskCfg.maxSingleTokenExposurePercent / 100);
     const effectiveSize = tradeRequest.amountSol * this.newPositionSizeMultiplier;
     if (effectiveSize > maxSinglePosition) {
+      const availableCapital = this.exposureTracker.getAvailableCapital();
+      logger.info('POSITION_SIZE_BLOCKED', {
+        calculatedSize: effectiveSize,
+        limit: maxSinglePosition,
+        limitType: 'maxSingleTokenExposurePercent',
+        totalCapitalSol: totalCapital,
+        maxSingleTokenExposurePercent: riskCfg.maxSingleTokenExposurePercent,
+        availableCapital,
+        isDryRun: this.config.bot.dryRun,
+        tokenMint: tradeRequest.tokenMint.slice(0, 12),
+      });
       return { approved: false, reason: `Position size ${effectiveSize.toFixed(4)} SOL exceeds single token max ${maxSinglePosition.toFixed(4)} SOL (${riskCfg.maxSingleTokenExposurePercent}%)` };
     }
 
     const availableCapital = this.exposureTracker.getAvailableCapital();
-    if (tradeRequest.amountSol > availableCapital - riskCfg.gasReserveSol) {
-      return { approved: false, reason: `Insufficient capital after gas reserve: ${(availableCapital - riskCfg.gasReserveSol).toFixed(4)} SOL available` };
+    const availableAfterGas = availableCapital - riskCfg.gasReserveSol;
+    if (tradeRequest.amountSol > availableAfterGas) {
+      logger.info('POSITION_SIZE_BLOCKED', {
+        calculatedSize: tradeRequest.amountSol,
+        limit: availableAfterGas,
+        limitType: 'availableCapitalAfterGas',
+        availableCapital,
+        gasReserveSol: riskCfg.gasReserveSol,
+        isDryRun: this.config.bot.dryRun,
+        tokenMint: tradeRequest.tokenMint.slice(0, 12),
+      });
+      return { approved: false, reason: `Insufficient capital after gas reserve: ${availableAfterGas.toFixed(4)} SOL available` };
     }
 
     if (this.positionManager.hasOpenPosition(tradeRequest.tokenMint)) {
