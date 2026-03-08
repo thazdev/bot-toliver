@@ -122,14 +122,14 @@ export class TradeFilterPipeline {
     try {
       const redis = RedisClient.getInstance().getClient();
       await redis.incr('diag:stage2_passed');
-    } catch (/* non-critical */) {}
+    } catch (_) {}
 
     // Log obrigatório: entrada no Stage 3 (deep_analysis)
     logger.info('STAGE3_ENTRY', { tokenMint: tokenMint.slice(0, 12) });
     try {
       const redis = RedisClient.getInstance().getClient();
       await redis.incr('diag:stage3_entries');
-    } catch (/* non-critical */) {}
+    } catch (_) {}
 
     const step4 = this.step4DeepAnalysis(context);
     steps.push(step4);
