@@ -107,12 +107,29 @@ export class TradeExecutor {
         }
       } catch (_) {}
 
+      // DRY RUN: simular quote sem chamar Jupiter (tokens novos podem não estar indexados)
       const amountLamports = solToLamports(tradeRequest.amountSol).toNumber();
-      const quote = tradeRequest.direction === 'buy'
-        ? await this.jupiterClient.getBuyQuote(tradeRequest.tokenMint, amountLamports, slippageBps)
-        : await this.jupiterClient.getSellQuote(tradeRequest.tokenMint, amountLamports, slippageBps);
+      const simulatedSlippage = 0.03;
+      const quote =
+        tradeRequest.direction === 'buy'
+          ? {
+              inputMint: 'So11111111111111111111111111111111111111112',
+              inAmount: amountLamports.toString(),
+              outputMint: tradeRequest.tokenMint,
+              outAmount: Math.floor(amountLamports * (1 - simulatedSlippage) * 1000).toString(),
+              priceImpactPct: (simulatedSlippage * 100).toFixed(4),
+              routePlan: [] as unknown[],
+            }
+          : {
+              inputMint: tradeRequest.tokenMint,
+              inAmount: (amountLamports * 1000).toString(),
+              outputMint: 'So11111111111111111111111111111111111111112',
+              outAmount: Math.floor(amountLamports * (1 - simulatedSlippage)).toString(),
+              priceImpactPct: (simulatedSlippage * 100).toFixed(4),
+              routePlan: [] as unknown[],
+            };
 
-      logger.info('🔵 DRY RUN TRADE — would have executed', {
+      logger.info('🔵 DRY RUN TRADE — would have executed (quote simulated)', {
         direction: tradeRequest.direction,
         tokenMint: tradeRequest.tokenMint,
         amountSOL: tradeRequest.amountSol,

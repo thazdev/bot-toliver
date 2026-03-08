@@ -45,6 +45,23 @@ export class TransactionManager {
     request: TradeRequest,
     context: TransactionContext,
   ): Promise<TransactionResult> {
+    if (request.dryRun) {
+      const amountLamports = solToLamports(request.amountSol).toNumber();
+      const simulatedOut = Math.floor(amountLamports * 0.97 * 1000);
+      logger.info('TransactionManager: DRY_RUN bypass — no Jupiter call, no retry', {
+        tokenMint: request.tokenMint.slice(0, 12),
+        direction: context.type,
+        amountSOL: request.amountSol,
+      });
+      return {
+        success: true,
+        signature: `dry_run_${Date.now()}_${request.tokenMint.slice(0, 8)}`,
+        inAmount: amountLamports.toString(),
+        outAmount: simulatedOut.toString(),
+        priceImpactPct: '3.0',
+      };
+    }
+
     const maxRetries = context.type === 'SELL' ? SELL_MAX_RETRIES : BUY_MAX_RETRIES;
     let attempt = 0;
     let blockhashRenewals = 0;
