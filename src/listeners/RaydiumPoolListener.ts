@@ -61,7 +61,7 @@ export class RaydiumPoolListener extends BaseListener {
     }
 
     if (hasAddLiquidity) {
-      logger.debug('Raydium liquidity add detected', { signature });
+      // Liquidity add detectado — sem log para reduzir ruído (eventos muito frequentes)
     }
   }
 

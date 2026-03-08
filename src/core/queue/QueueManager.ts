@@ -65,7 +65,7 @@ export class QueueManager {
   ): Promise<void> {
     const queue = this.getQueue(queueName);
     await queue.add(jobName, data);
-    logger.debug('Job added to queue', { queueName, jobName });
+    // Log removido: "Job added to queue" gerava excesso de logs
   }
 
   /**

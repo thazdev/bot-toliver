@@ -134,16 +134,51 @@ export class LogsListener extends BaseListener {
     if (!isPumpFunInvocation) return;
 
     const hasCreate = logMessages.some(
-      (log) => log.includes('Program log: Create') || log.includes('Program log: create'),
+      (log) => log.includes('Program log: Create') || log.includes('Program log: Instruction: Create'),
     );
     const hasMintTo = logMessages.some((log) => log.includes('MintTo'));
     const hasInitializeAccount = logMessages.some((log) => log.includes('InitializeAccount'));
 
     if (!hasCreate && !(hasMintTo && hasInitializeAccount)) return;
 
-    const discovered = this.extractTokenFromLogs(logMessages);
+    // Pump.fun Create: dados vêm em "Program data:" base64, não em mint:/pool: texto
+    let discovered = this.extractTokenFromProgramData(logMessages);
+    if (!discovered.tokenMint) {
+      discovered = this.extractTokenFromLogs(logMessages);
+    }
 
     await this.fetchBlockTimeAndEmit(signature, discovered, 'pumpfun', processStartMs);
+  }
+
+  /**
+   * Extrai tokenMint e poolAddress do "Program data:" base64 (Pump.fun Create).
+   */
+  private extractTokenFromProgramData(logMessages: string[]): Partial<DiscoveredToken> {
+    for (const log of logMessages) {
+      if (!log.startsWith('Program data:')) continue;
+      const base64 = log.replace(/^Program data:\s*/, '').trim();
+      if (!base64 || base64.length < 50) continue;
+      try {
+        const buf = Buffer.from(base64, 'base64');
+        if (buf.length < 8 + 4 + 4 + 4 + 32 + 32 + 32) continue;
+        let offset = 8;
+        const readString = (): void => {
+          if (offset + 4 > buf.length) return;
+          const len = buf.readUInt32LE(offset);
+          offset += 4 + len;
+        };
+        readString();
+        readString();
+        readString();
+        if (offset + 32 + 32 > buf.length) continue;
+        const mint = new PublicKey(buf.subarray(offset, offset + 32)).toBase58();
+        const bondingCurve = new PublicKey(buf.subarray(offset + 32, offset + 64)).toBase58();
+        return { tokenMint: mint, poolAddress: bondingCurve, initialLiquiditySOL: 30 };
+      } catch {
+        // ignora
+      }
+    }
+    return {};
   }
 
   private extractTokenFromLogs(logMessages: string[]): Partial<DiscoveredToken> {
@@ -152,12 +187,12 @@ export class LogsListener extends BaseListener {
     let initialLiquiditySOL = 0;
 
     for (const log of logMessages) {
-      const mintMatch = log.match(/mint:\s*([A-Za-z0-9]{32,44})/);
+      const mintMatch = log.match(/mint[=:\s]*([A-Za-z0-9]{32,44})/i);
       if (mintMatch && !tokenMint) {
         tokenMint = mintMatch[1];
       }
 
-      const poolMatch = log.match(/pool:\s*([A-Za-z0-9]{32,44})/);
+      const poolMatch = log.match(/pool[=:\s]*([A-Za-z0-9]{32,44})/i);
       if (poolMatch && !poolAddress) {
         poolAddress = poolMatch[1];
       }

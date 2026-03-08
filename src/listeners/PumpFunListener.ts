@@ -12,11 +12,13 @@ import type { QueueManager } from '../core/queue/QueueManager.js';
  * Detects 'create' and 'buy' instructions on the bonding curve.
  */
 const LOG_THROTTLE_MS = 10_000;
+const MINT_EXTRACT_FAIL_THROTTLE_MS = 30_000;
 
 export class PumpFunListener extends BaseListener {
   private subscriptionId: number | null = null;
   private connectionManager: ConnectionManager;
   private lastCreateLogAt = 0;
+  private lastMintExtractFailAt = 0;
 
   constructor(queueManager: QueueManager) {
     super('PumpFunListener', queueManager);
@@ -64,16 +66,22 @@ export class PumpFunListener extends BaseListener {
       if (now - this.lastCreateLogAt > LOG_THROTTLE_MS) {
         this.lastCreateLogAt = now;
         logger.info('Pump.fun token creation detected', { signature });
-      } else {
-        logger.debug('Pump.fun token creation detected', { signature });
       }
 
-      let mintAddress = this.extractMintFromLogs(logMessages);
-      if (!mintAddress) {
-        mintAddress = await this.extractMintFromTransaction(signature);
-      }
+      // 1) Program data (base64) — sem RPC, mais rápido
+      let mintAddress = this.extractMintFromProgramData(logMessages);
+      // 2) Regex em logs (mint: xxx)
+      if (!mintAddress) mintAddress = this.extractMintFromLogs(logMessages);
+      // 3) Fallback: getTransaction (RPC)
+      if (!mintAddress) mintAddress = await this.extractMintFromTransaction(signature);
       if (!mintAddress || mintAddress.length < 32) {
-        logger.debug('PumpFunListener: não foi possível extrair mint da tx', { signature: signature.slice(0, 16) });
+        if (now - this.lastMintExtractFailAt > MINT_EXTRACT_FAIL_THROTTLE_MS) {
+          this.lastMintExtractFailAt = now;
+          logger.warn('PumpFunListener: não foi possível extrair mint (tentei Program data, logs e getTransaction)', {
+            signature: signature.slice(0, 16),
+            hasProgramData: logMessages.some((l) => l.startsWith('Program data:')),
+          });
+        }
         return;
       }
 
@@ -103,6 +111,38 @@ export class PumpFunListener extends BaseListener {
   }
 
   /**
+   * Extrai mint do "Program data:" base64 (Create instruction).
+   * Formato: 8b discriminator + name + symbol + uri + 32b mint + 32b bondingCurve + 32b user.
+   */
+  private extractMintFromProgramData(logMessages: string[]): string {
+    for (const log of logMessages) {
+      if (!log.startsWith('Program data:')) continue;
+      const base64 = log.replace(/^Program data:\s*/, '').trim();
+      if (!base64) continue;
+      try {
+        const buf = Buffer.from(base64, 'base64');
+        if (buf.length < 8 + 4 + 4 + 4 + 32 + 32 + 32) continue; // mínimo: header + 3 strings vazias + 3 pubkeys
+        let offset = 8; // discriminator
+        const readString = (): void => {
+          if (offset + 4 > buf.length) return;
+          const len = buf.readUInt32LE(offset);
+          offset += 4 + len;
+        };
+        readString(); // name
+        readString(); // symbol
+        readString(); // uri
+        if (offset + 32 > buf.length) continue;
+        const mintBytes = buf.subarray(offset, offset + 32);
+        const mint = new PublicKey(mintBytes).toBase58();
+        if (mint.length >= 32 && mint.length <= 44) return mint;
+      } catch {
+        // ignora erro de parse
+      }
+    }
+    return '';
+  }
+
+  /**
    * Tenta extrair o mint dos logs (ex.: "mint: xxx" ou base58 em logs).
    */
   private extractMintFromLogs(logMessages: string[]): string {
@@ -115,7 +155,8 @@ export class PumpFunListener extends BaseListener {
 
   /**
    * Extrai o mint da transação Pump.fun Create.
-   * O mint é o 7º account (índice 6) na instrução Create; fallback para último account.
+   * Suporta transações versionadas (v0) com loadedAddresses.
+   * Mint = 7º account (índice 6) na instrução Create.
    */
   private async extractMintFromTransaction(signature: string): Promise<string> {
     try {
@@ -126,8 +167,23 @@ export class PumpFunListener extends BaseListener {
       );
       if (!tx?.transaction?.message) return '';
 
-      const keys = tx.transaction.message.getAccountKeys?.();
-      const accountKeys = keys?.staticAccountKeys ?? keys ?? [];
+      const msg = tx.transaction.message;
+      const keys = msg.getAccountKeys?.();
+      let accountKeys: unknown[] = [];
+
+      if (keys) {
+        if (Array.isArray(keys)) {
+          accountKeys = keys;
+        } else if (keys.staticAccountKeys) {
+          accountKeys = [...keys.staticAccountKeys];
+          const meta = tx.meta as { loadedAddresses?: { writable?: string[]; readonly?: string[] } } | undefined;
+          const loaded = meta?.loadedAddresses;
+          if (loaded?.writable?.length) accountKeys.push(...loaded.writable);
+          if (loaded?.readonly?.length) accountKeys.push(...loaded.readonly);
+        } else {
+          accountKeys = (keys as { staticAccountKeys?: unknown[] }).staticAccountKeys ?? [];
+        }
+      }
 
       const toBase58 = (k: unknown): string =>
         typeof k === 'string' ? k : (k as { toBase58?: () => string })?.toBase58?.() ?? '';
@@ -135,6 +191,7 @@ export class PumpFunListener extends BaseListener {
       const candidates = [
         accountKeys[6],
         accountKeys[7],
+        accountKeys[8],
         accountKeys[accountKeys.length - 1],
       ].filter(Boolean);
 

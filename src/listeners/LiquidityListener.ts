@@ -74,8 +74,6 @@ export class LiquidityListener extends BaseListener {
     if (now - this.lastLiquidityLogAt > LOG_THROTTLE_MS) {
       this.lastLiquidityLogAt = now;
       logger.info('Liquidity add detected', { program: programName, signature });
-    } else {
-      logger.debug('Liquidity add detected', { program: programName, signature });
     }
 
     // Não emite POOL_CREATED sem tokenMint — evita flood de "ignorado" no BaseListener.

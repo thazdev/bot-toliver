@@ -8,6 +8,7 @@ import { TOKEN_PROGRAM_ID } from '../utils/constants.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
 
 const LOG_THROTTLE_MS = 10_000;
+const MINT_EXTRACT_FAIL_THROTTLE_MS = 30_000;
 
 /**
  * Monitors the SPL Token program for InitializeMint instructions.
@@ -17,6 +18,7 @@ export class TokenMintListener extends BaseListener {
   private subscriptionId: number | null = null;
   private connectionManager: ConnectionManager;
   private lastMintLogAt = 0;
+  private lastMintExtractFailAt = 0;
 
   constructor(queueManager: QueueManager) {
     super('TokenMintListener', queueManager);
@@ -64,13 +66,14 @@ export class TokenMintListener extends BaseListener {
     if (now - this.lastMintLogAt > LOG_THROTTLE_MS) {
       this.lastMintLogAt = now;
       logger.info('New token mint detected', { signature });
-    } else {
-      logger.debug('New token mint detected', { signature });
     }
 
     const mintAddress = await this.extractMintFromTransaction(signature);
     if (!mintAddress || mintAddress.length < 32) {
-      logger.debug('TokenMintListener: não foi possível extrair mint da tx', { signature: signature.slice(0, 16) });
+      if (now - this.lastMintExtractFailAt > MINT_EXTRACT_FAIL_THROTTLE_MS) {
+        this.lastMintExtractFailAt = now;
+        logger.debug('TokenMintListener: não foi possível extrair mint da tx', { signature: signature.slice(0, 16) });
+      }
       return;
     }
 

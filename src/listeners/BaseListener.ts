@@ -9,8 +9,11 @@ import { isBotEnabled } from '../config/BotEnabledResolver.js';
  * Abstract base class for all Solana event listeners.
  * Provides common lifecycle management and event dispatching.
  */
+const JOB_ADDED_LOG_THROTTLE_MS = 30_000;
+
 export abstract class BaseListener {
   private static lastIgnoredLogAt = 0;
+  private static lastJobAddedLogAt = 0;
 
   protected name: string;
   protected isActive: boolean = false;
@@ -65,7 +68,10 @@ export abstract class BaseListener {
             source: this.name,
             detectedAt: event.timestamp,
           } satisfies TokenScanJobPayload);
-          logger.info('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: 'TOKEN_DETECTED' });
+          if (Date.now() - BaseListener.lastJobAddedLogAt > JOB_ADDED_LOG_THROTTLE_MS) {
+            BaseListener.lastJobAddedLogAt = Date.now();
+            logger.info('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: 'TOKEN_DETECTED' });
+          }
           break;
         }
         case 'POOL_CREATED': {
@@ -89,7 +95,10 @@ export abstract class BaseListener {
             source: this.name,
             detectedAt: event.timestamp,
           } satisfies TokenScanJobPayload);
-          logger.info('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: event.type });
+          if (Date.now() - BaseListener.lastJobAddedLogAt > JOB_ADDED_LOG_THROTTLE_MS) {
+            BaseListener.lastJobAddedLogAt = Date.now();
+            logger.info('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: event.type });
+          }
           break;
         }
         default:
