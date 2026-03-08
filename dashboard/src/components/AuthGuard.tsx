@@ -4,7 +4,12 @@ import { useSession } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
-const PUBLIC_PATHS = ['/login', '/signup', '/setup'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/signup',
+  '/setup',
+  ...(process.env.NODE_ENV === 'development' ? ['/diagnostics'] : []),
+];
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();

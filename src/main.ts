@@ -534,7 +534,39 @@ async function main(): Promise<void> {
         }
 
         const results = await strategyRegistry.evaluateAll(context);
-        const buySignal = strategyRegistry.getBestBuySignal(results);
+        let buySignal = strategyRegistry.getBestBuySignal(results);
+
+        // FORCE_BUY_SIGNAL: modo debug temporário — qualquer token que passar o pipeline recebe sinal
+        if (process.env.FORCE_BUY_SIGNAL === 'true') {
+          buySignal = {
+            signal: 'buy',
+            confidence: 0.5,
+            reason: 'forced_debug',
+            suggestedSizeSol: 0.05,
+            triggerType: 'momentum_confirmation',
+          };
+          logger.info('FORCED_BUY_SIGNAL', { tokenMint: context.tokenMint });
+        }
+
+        // Salvar no Redis para diagnóstico: tokens que passaram o pipeline
+        try {
+          const skipReasons = results
+            .filter((r) => r.signal === 'skip' && r.reason)
+            .map((r) => r.reason!)
+            .slice(0, 5);
+          const entry = JSON.stringify({
+            mint: tokenMint,
+            entryScore: filterOutcome.finalEntryScore,
+            liquidity: context.liquidity,
+            holders: context.holderData.holderCount,
+            hasBuySignal: buySignal !== null,
+            skipReasons,
+            tradeExecuted: false,
+            timestamp: new Date().toISOString(),
+          });
+          await redis.lpush('diag:passed_tokens_log', entry);
+          await redis.ltrim('diag:passed_tokens_log', 0, 49);
+        } catch (_) {}
 
         if (isDebugToken) {
           logger.info('DEBUG_TRACE: STRATEGY_SIGNAL', {
@@ -639,15 +671,19 @@ async function main(): Promise<void> {
               dryRun,
               strategy: buySignal.triggerType,
             });
+            const strategyId =
+              process.env.FORCE_BUY_SIGNAL === 'true' ? 'forced_debug' : (buySignal.triggerType ?? 'auto');
             await queueManager.addJob(QueueName.TRADE_EXECUTE, 'strategy-buy', {
               tradeRequest: {
                 tokenMint: tokenInfo.mintAddress,
                 direction: 'buy',
                 amountSol: finalSize,
                 slippageBps: config.trading.defaultSlippageBps,
-                strategyId: buySignal.triggerType ?? 'auto',
+                strategyId,
                 dryRun,
+                entryScore: filterOutcome.finalEntryScore,
               },
+              entryScore: filterOutcome.finalEntryScore,
             } satisfies TradeExecuteJobPayload);
           } else {
             if (isDebugToken) {
@@ -721,7 +757,9 @@ async function main(): Promise<void> {
                 slippageBps: config.trading.defaultSlippageBps,
                 strategyId: 'validation_simulation',
                 dryRun: true,
+                entryScore: filterOutcome.finalEntryScore,
               },
+              entryScore: filterOutcome.finalEntryScore,
             } satisfies TradeExecuteJobPayload);
           }
         }

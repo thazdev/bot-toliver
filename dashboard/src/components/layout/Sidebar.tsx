@@ -11,10 +11,12 @@ import {
   Settings,
   LogOut,
   Bot,
+  Activity,
 } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
+  { href: '/diagnostics', label: 'Diagnostics', icon: Activity },
   { href: '/positions', label: 'Histórico', icon: History },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/settings', label: 'Settings', icon: Settings },

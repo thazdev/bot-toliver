@@ -20,6 +20,8 @@ export interface TokenScanJobPayload {
 
 export interface TradeExecuteJobPayload {
   tradeRequest: TradeRequest;
+  /** Opcional: entry score para logs de dry run */
+  entryScore?: number;
 }
 
 export interface PositionMonitorJobPayload {

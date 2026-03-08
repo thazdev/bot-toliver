@@ -90,6 +90,13 @@ export class TradeExecutor {
     const slippageBps = tradeRequest.slippageBps;
 
     if (tradeRequest.dryRun) {
+      const entryScore = tradeRequest.entryScore ?? 0;
+      logger.info('DRY_RUN_INTERCEPTED', {
+        tokenMint: tradeRequest.tokenMint,
+        amountSOL: tradeRequest.amountSol,
+        entryScore,
+      });
+
       try {
         const debugToken = await RedisClient.getInstance().getClient().get('debug:last_passed_token');
         if (debugToken && tradeRequest.tokenMint === debugToken) {
@@ -120,6 +127,41 @@ export class TradeExecutor {
         'Simulated — DRY_RUN=true',
       );
       await this.tradeRepository.insert(result);
+
+      // Publicar no Redis para o dashboard mostrar em tempo real
+      try {
+        const redis = RedisClient.getInstance().getClient();
+        await redis.publish(
+          'bot:events',
+          JSON.stringify({
+            type: 'DRY_RUN_TRADE',
+            tokenMint: tradeRequest.tokenMint,
+            amountSOL: tradeRequest.amountSol,
+            entryScore,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+        // Atualizar tradeExecuted no log de passed tokens
+        const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
+        const updated = rawList.map((s) => {
+          try {
+            const obj = JSON.parse(s) as { mint: string; tradeExecuted?: boolean };
+            if (obj.mint === tradeRequest.tokenMint) {
+              return JSON.stringify({ ...obj, tradeExecuted: true });
+            }
+            return s;
+          } catch {
+            return s;
+          }
+        });
+        if (updated.some((s, i) => s !== rawList[i])) {
+          await redis.del('diag:passed_tokens_log');
+          for (let i = updated.length - 1; i >= 0; i--) {
+            await redis.lpush('diag:passed_tokens_log', updated[i]);
+          }
+        }
+      } catch (_) {}
+
       return result;
     }
 

@@ -9,6 +9,8 @@ export interface TradeRequest {
   slippageBps: number;
   strategyId: string;
   dryRun: boolean;
+  /** Opcional: usado para logs e diagnóstico em dry run */
+  entryScore?: number;
 }
 
 export interface TradeResult {

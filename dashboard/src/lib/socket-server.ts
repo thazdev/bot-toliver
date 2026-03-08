@@ -28,17 +28,34 @@ export function initSocketHandlers(io: Server) {
   redisSub.connect().catch(() => {});
 
   redisSub.subscribe('dashboard:force-exit').catch(() => {});
+  redisSub.subscribe('bot:events').catch(() => {});
 
-  redisSub.on('message', (_channel, message) => {
+  redisSub.on('message', (channel, message) => {
     try {
-      const data = JSON.parse(message);
-      io.emit('alert', {
-        id: `force-exit-${Date.now()}`,
-        type: 'alert',
-        message: `Force exit enviado para posição ${data.positionId}`,
-        timestamp: new Date().toISOString(),
-        data,
-      });
+      if (channel === 'dashboard:force-exit') {
+        const data = JSON.parse(message);
+        io.emit('alert', {
+          id: `force-exit-${Date.now()}`,
+          type: 'alert',
+          message: `Force exit enviado para posição ${data.positionId}`,
+          timestamp: new Date().toISOString(),
+          data,
+        });
+        return;
+      }
+      if (channel === 'bot:events') {
+        const data = JSON.parse(message) as { type?: string; tokenMint?: string; amountSOL?: number; timestamp?: string };
+        const evType = data.type ?? 'bot_event';
+        io.emit('bot_event', {
+          id: `bot-${evType}-${Date.now()}`,
+          type: evType,
+          message: evType === 'DRY_RUN_TRADE'
+            ? `DRY RUN: ${(data.amountSOL ?? 0).toFixed(4)} SOL em ${(data.tokenMint ?? '').slice(0, 8)}...`
+            : JSON.stringify(data),
+          timestamp: data.timestamp ?? new Date().toISOString(),
+          data,
+        });
+      }
     } catch {}
   });
 
