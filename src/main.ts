@@ -492,29 +492,60 @@ async function main(): Promise<void> {
           return;
         }
 
-        logger.info('PIPELINE_PASSED', {
-          tokenMint: tokenInfo.mintAddress.slice(0, 12),
-          entryScore: filterOutcome.finalEntryScore,
-        });
+        const tokenMint = tokenInfo.mintAddress;
+        const redis = RedisClient.getInstance().getClient();
+        const existingDebug = await redis.get('debug:last_passed_token');
+        if (!existingDebug) {
+          await redis.set('debug:last_passed_token', tokenMint, 'EX', 300);
+        }
+        const debugToken = await redis.get('debug:last_passed_token');
+        const isDebugToken = debugToken !== null && tokenMint === debugToken;
+
+        if (isDebugToken) {
+          logger.info('DEBUG_TRACE: PIPELINE_PASSED', {
+            tokenMint: tokenMint.slice(0, 12),
+            entryScore: filterOutcome.finalEntryScore,
+          });
+        }
 
         const results = await strategyRegistry.evaluateAll(context);
         const buySignal = strategyRegistry.getBestBuySignal(results);
 
-        logger.info('STRATEGY_SIGNAL', {
-          tokenMint: tokenInfo.mintAddress.slice(0, 12),
-          hasBuySignal: buySignal !== null,
-          confidence: buySignal?.confidence ?? 0,
-          strategyName: buySignal?.triggerType ?? 'none',
-        });
+        if (isDebugToken) {
+          logger.info('DEBUG_TRACE: STRATEGY_SIGNAL', {
+            tokenMint: tokenMint.slice(0, 12),
+            hasBuySignal: buySignal !== null,
+            confidence: buySignal?.confidence ?? 0,
+            strategyName: buySignal?.triggerType ?? 'none',
+          });
+        }
 
         const guardStatus = tradingGuard.evaluateToken(tokenInfo.mintAddress, context);
 
-        logger.info('GUARD_RESULT', {
-          tokenMint: tokenInfo.mintAddress.slice(0, 12),
-          canTrade: guardStatus.canTrade,
-          reason: guardStatus.reason ?? 'ok',
-        });
+        if (isDebugToken) {
+          logger.info('DEBUG_TRACE: GUARD_RESULT', {
+            tokenMint: tokenMint.slice(0, 12),
+            canTrade: guardStatus.canTrade,
+            reason: guardStatus.reason ?? 'ok',
+          });
+        }
         if (!guardStatus.canTrade) {
+          if (isDebugToken) {
+            logger.info('=== FULL_TRACE_TOKEN ===', {
+              tokenMint: tokenMint.slice(0, 12),
+              pipeline: 'PASSED',
+              hasBuySignal: buySignal !== null,
+              buySignalConfidence: buySignal?.confidence,
+              guardCanTrade: guardStatus.canTrade,
+              guardReason: guardStatus.reason,
+              positionSize: undefined,
+              positionBlocked: undefined,
+              riskApproved: undefined,
+              riskReason: undefined,
+              executingTrade: false,
+            });
+            logger.info('=== END_TRACE ===');
+          }
           logger.info('TradingGuard blocked trade', {
             token: tokenInfo.mintAddress,
             reason: guardStatus.reason,
@@ -535,12 +566,14 @@ async function main(): Promise<void> {
           const finalSize = baseSize * guardStatus.positionSizeMultiplier;
           const minSize = getTierConfig(config.trading.strategyTier).sizing.minPositionSol;
 
-          logger.info('POSITION_SIZE', {
-            tokenMint: tokenInfo.mintAddress.slice(0, 12),
-            calculatedSize: sizeSol,
-            minSize,
-            blocked: sizeSol < minSize,
-          });
+          if (isDebugToken) {
+            logger.info('DEBUG_TRACE: POSITION_SIZE', {
+              tokenMint: tokenMint.slice(0, 12),
+              calculatedSize: sizeSol,
+              minSize,
+              blocked: sizeSol < minSize,
+            });
+          }
 
           const dryRun = await getEffectiveDryRun(config);
 
@@ -554,11 +587,27 @@ async function main(): Promise<void> {
           });
 
           if (riskCheck.approved) {
-            logger.info('EXECUTING_TRADE', {
-              tokenMint: tokenInfo.mintAddress.slice(0, 12),
-              dryRun,
-              amountSOL: finalSize,
-            });
+            if (isDebugToken) {
+              logger.info('DEBUG_TRACE: EXECUTING_TRADE', {
+                tokenMint: tokenMint.slice(0, 12),
+                dryRun,
+                amountSOL: finalSize,
+              });
+              logger.info('=== FULL_TRACE_TOKEN ===', {
+                tokenMint: tokenMint.slice(0, 12),
+                pipeline: 'PASSED',
+                hasBuySignal: true,
+                buySignalConfidence: buySignal.confidence,
+                guardCanTrade: guardStatus.canTrade,
+                guardReason: guardStatus.reason ?? 'ok',
+                positionSize: sizeSol,
+                positionBlocked: sizeSol < minSize,
+                riskApproved: riskCheck.approved,
+                riskReason: riskCheck.reason,
+                executingTrade: true,
+              });
+              logger.info('=== END_TRACE ===');
+            }
             logger.info('Trade aprovado — enfileirando compra', {
               tokenMint: tokenInfo.mintAddress.slice(0, 12),
               amountSol: finalSize.toFixed(4),
@@ -576,10 +625,42 @@ async function main(): Promise<void> {
               },
             } satisfies TradeExecuteJobPayload);
           } else {
+            if (isDebugToken) {
+              logger.info('=== FULL_TRACE_TOKEN ===', {
+                tokenMint: tokenMint.slice(0, 12),
+                pipeline: 'PASSED',
+                hasBuySignal: true,
+                buySignalConfidence: buySignal.confidence,
+                guardCanTrade: guardStatus.canTrade,
+                guardReason: guardStatus.reason ?? 'ok',
+                positionSize: sizeSol,
+                positionBlocked: sizeSol < minSize,
+                riskApproved: riskCheck.approved,
+                riskReason: riskCheck.reason,
+                executingTrade: false,
+              });
+              logger.info('=== END_TRACE ===');
+            }
             statsTracker.incrementTradesBlocked();
             logger.info('Trade blocked by risk manager', { reason: riskCheck.reason });
           }
         } else {
+          if (isDebugToken) {
+            logger.info('=== FULL_TRACE_TOKEN ===', {
+              tokenMint: tokenMint.slice(0, 12),
+              pipeline: 'PASSED',
+              hasBuySignal: false,
+              buySignalConfidence: buySignal?.confidence ?? 0,
+              guardCanTrade: guardStatus.canTrade,
+              guardReason: guardStatus.reason ?? 'ok',
+              positionSize: undefined,
+              positionBlocked: undefined,
+              riskApproved: undefined,
+              riskReason: undefined,
+              executingTrade: false,
+            });
+            logger.info('=== END_TRACE ===');
+          }
           const skipReasons = results
             .filter((r) => r.signal === 'skip' && r.reason)
             .map((r) => r.reason)

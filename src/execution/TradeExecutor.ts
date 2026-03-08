@@ -1,9 +1,9 @@
 import { logger } from '../utils/logger.js';
 import { solToLamports } from '../utils/formatters.js';
+import { RedisClient } from '../core/cache/RedisClient.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
 import { JupiterClient } from './JupiterClient.js';
 import { SlippageManager } from './SlippageManager.js';
-import { RedisClient } from '../core/cache/RedisClient.js';
 import { TradeRepository } from '../core/database/repositories/TradeRepository.js';
 import { QueueManager } from '../core/queue/QueueManager.js';
 import { QueueName } from '../types/queue.types.js';
@@ -90,10 +90,15 @@ export class TradeExecutor {
     const slippageBps = tradeRequest.slippageBps;
 
     if (tradeRequest.dryRun) {
-      logger.info('DRY_RUN_INTERCEPTED', {
-        tokenMint: tradeRequest.tokenMint.slice(0, 12),
-        wouldBuy: tradeRequest.amountSol,
-      });
+      try {
+        const debugToken = await RedisClient.getInstance().getClient().get('debug:last_passed_token');
+        if (debugToken && tradeRequest.tokenMint === debugToken) {
+          logger.info('DEBUG_TRACE: DRY_RUN_INTERCEPTED', {
+            tokenMint: tradeRequest.tokenMint.slice(0, 12),
+            wouldBuy: tradeRequest.amountSol,
+          });
+        }
+      } catch (_) {}
 
       const amountLamports = solToLamports(tradeRequest.amountSol).toNumber();
       const quote = tradeRequest.direction === 'buy'
