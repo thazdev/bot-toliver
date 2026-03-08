@@ -89,7 +89,8 @@ export class TradeExecutor {
   ): Promise<TradeResult> {
     const slippageBps = tradeRequest.slippageBps;
 
-    if (tradeRequest.dryRun) {
+    const envDryRun = process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true';
+    if (tradeRequest.dryRun || envDryRun) {
       const entryScore = tradeRequest.entryScore ?? 0;
       logger.info('DRY_RUN_INTERCEPTED', {
         tokenMint: tradeRequest.tokenMint,

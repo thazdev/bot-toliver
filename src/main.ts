@@ -588,6 +588,17 @@ async function main(): Promise<void> {
         }
         if (!guardStatus.canTrade) {
           const blockReason = guardStatus.reason?.trim() || 'TradingGuard_blocked';
+          logger.warn('RAW_BLOCK_DEBUG', {
+            tokenMint,
+            source: 'TradingGuard',
+            guardStatusRaw: JSON.stringify(guardStatus),
+            positionSizerRaw: JSON.stringify({ hasBuySignal: buySignal !== null, confidence: buySignal?.confidence }),
+            balanceRaw: exposureTracker.getAvailableCapital(),
+            isDryRun: config.bot.dryRun,
+            openPositions: positionManager.getOpenPositions().length,
+            dailyLoss: context.dailyLossPercent,
+            consecutiveLosses: context.consecutiveLosses,
+          });
           logger.info('TRADE_BLOCKED_REASON', {
             tokenMint,
             source: 'TradingGuard',
@@ -712,6 +723,17 @@ async function main(): Promise<void> {
             const maxPositions = getTierConfig(config.trading.strategyTier).sizing.maxConcurrentPositions;
             const availableCapital = exposureTracker.getAvailableCapital();
             const totalExposure = exposureTracker.getTotalExposure();
+            logger.warn('RAW_BLOCK_DEBUG', {
+              tokenMint,
+              source: 'RiskCheck',
+              riskCheckRaw: JSON.stringify(riskCheck),
+              positionSizerRaw: JSON.stringify({ sizeSol, finalSize, minSize, baseSize }),
+              balanceRaw: availableCapital,
+              isDryRun: config.bot.dryRun,
+              openPositions: openPositions.length,
+              dailyLoss: context.dailyLossPercent,
+              consecutiveLosses: context.consecutiveLosses,
+            });
             logger.info('TRADE_BLOCKED_REASON', {
               tokenMint,
               riskApproved: riskCheck.approved,
@@ -759,6 +781,28 @@ async function main(): Promise<void> {
             logger.warn('TRADE_BLOCKED', { tokenMint, reason: blockReason });
           }
         } else {
+          // Token passou no pipeline mas sem sinal de compra — definir reason para evitar "unknown" no dashboard
+          const noBuyReason = 'no_buy_signal';
+          try {
+            const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
+            const updated = rawList.map((s) => {
+              try {
+                const obj = JSON.parse(s) as { mint: string; tradeBlockReason?: string };
+                if (obj.mint === tokenMint) {
+                  return JSON.stringify({ ...obj, tradeBlockReason: noBuyReason });
+                }
+                return s;
+              } catch {
+                return s;
+              }
+            });
+            if (updated.some((s, i) => s !== rawList[i])) {
+              await redis.del('diag:passed_tokens_log');
+              for (let i = updated.length - 1; i >= 0; i--) {
+                await redis.lpush('diag:passed_tokens_log', updated[i]);
+              }
+            }
+          } catch (_) {}
           if (isDebugToken) {
             logger.info('=== FULL_TRACE_TOKEN ===', {
               tokenMint: tokenMint.slice(0, 12),
@@ -830,6 +874,17 @@ async function main(): Promise<void> {
 
     if (!riskCheck.approved) {
       const blockReason = riskCheck.reason?.trim() || 'riskcheck_returned_no_reason';
+      logger.warn('RAW_BLOCK_DEBUG', {
+        tokenMint: payload.tradeRequest.tokenMint,
+        source: 'TRADE_EXECUTE_worker',
+        riskCheckRaw: JSON.stringify(riskCheck),
+        positionSizerRaw: JSON.stringify({ amountSol: payload.tradeRequest.amountSol, strategyId: payload.tradeRequest.strategyId }),
+        balanceRaw: exposureTracker.getAvailableCapital(),
+        isDryRun: payload.tradeRequest.dryRun ?? config.bot.dryRun,
+        openPositions: positionManager.getOpenPositions().length,
+        dailyLoss: 'n/a',
+        consecutiveLosses: 'n/a',
+      });
       logger.info('TRADE_BLOCKED_REASON', {
         tokenMint: payload.tradeRequest.tokenMint,
         source: 'TRADE_EXECUTE_worker',

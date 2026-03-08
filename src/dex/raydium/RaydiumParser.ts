@@ -44,7 +44,7 @@ export class RaydiumParser {
       };
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('RaydiumParser: failed to parse account data', { error: errorMsg });
+      logger.debug('RAYDIUM_PARSE_SKIP', { error: errorMsg });
       return null;
     }
   }

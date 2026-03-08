@@ -45,7 +45,8 @@ export class TransactionManager {
     request: TradeRequest,
     context: TransactionContext,
   ): Promise<TransactionResult> {
-    if (request.dryRun) {
+    const envDryRun = process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true';
+    if (request.dryRun || envDryRun) {
       const amountLamports = solToLamports(request.amountSol).toNumber();
       const simulatedOut = Math.floor(amountLamports * 0.97 * 1000);
       logger.info('TransactionManager: DRY_RUN bypass — no Jupiter call, no retry', {

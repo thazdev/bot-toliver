@@ -41,6 +41,24 @@ export class JupiterClient {
     amount: number,
     slippageBps: number,
   ): Promise<JupiterQuote> {
+    const isDryRun = process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true';
+    if (isDryRun) {
+      const simulatedSlippage = 0.03;
+      const outAmount = Math.floor(amount * (1 - simulatedSlippage) * 1000);
+      logger.debug('JupiterClient: DRY_RUN bypass — returning simulated quote', {
+        inputMint: inputMint.slice(0, 8),
+        outputMint: outputMint.slice(0, 8),
+      });
+      return {
+        inputMint,
+        inAmount: amount.toString(),
+        outputMint,
+        outAmount: outAmount.toString(),
+        priceImpactPct: (simulatedSlippage * 100).toFixed(4),
+        routePlan: [],
+      };
+    }
+
     try {
       const response = await axios.get<JupiterQuote>(`${this.apiUrl}/quote`, {
         params: {
@@ -102,6 +120,12 @@ export class JupiterClient {
    * @returns Base64-encoded serialized transaction
    */
   async executeSwap(quoteResponse: JupiterQuote, userPublicKey: string): Promise<string> {
+    const isDryRun = process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true';
+    if (isDryRun) {
+      logger.debug('JupiterClient: DRY_RUN bypass — skipping swap execution');
+      throw new Error('DRY_RUN: swap execution skipped');
+    }
+
     try {
       const response = await axios.post<JupiterSwapResponse>(`${this.apiUrl}/swap`, {
         quoteResponse,

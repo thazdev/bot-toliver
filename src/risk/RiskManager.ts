@@ -107,7 +107,8 @@ export class RiskManager {
       return { approved: true, reason: 'All risk checks passed' };
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      logger.error('RISK_CHECK_ERROR', { error: errMsg, tokenMint: tradeRequest.tokenMint });
+      const errStack = error instanceof Error ? error.stack : undefined;
+      logger.error('RISK_EVAL_EXCEPTION', { error: errMsg, stack: errStack, tokenMint: tradeRequest.tokenMint });
       return { approved: false, reason: `risk_check_exception: ${errMsg}` };
     }
   }

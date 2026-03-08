@@ -88,6 +88,7 @@ function Stage2Breakdown({ reasons }: { reasons: Record<string, number> }) {
 function getBlockReasonShort(reason?: string): string {
   if (!reason) return 'unknown';
   const r = reason.toLowerCase();
+  if (r.includes('no_buy_signal') || r.includes('sem_sinal')) return 'sem sinal de compra';
   if (r.includes('insufficient') || r.includes('capital') || r.includes('balance') || r.includes('saldo')) return 'saldo insuficiente';
   if (r.includes('max_positions') || r.includes('max positions')) return 'max posições atingido';
   if (r.includes('daily_loss') || r.includes('daily risk') || r.includes('daily loss')) return 'daily loss';

@@ -112,6 +112,11 @@ export class HoneypotChecker {
       return { ...baseResult, buySimSuccess: true, sellSimSuccess: true };
     }
 
+    if (process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true') {
+      logger.debug('HoneypotChecker: DRY_RUN — skipping Jupiter simulation', { tokenMint: tokenMint.slice(0, 8) });
+      return { ...baseResult, buySimSuccess: true, sellSimSuccess: true };
+    }
+
     try {
       const simBuy = await this.jupiterSimulator.simulateSwap({
         inputMint: SOL_MINT,
