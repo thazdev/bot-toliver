@@ -1,8 +1,10 @@
 import { logger } from './logger.js';
 import { sleep } from './sleep.js';
 
+const MAX_RETRY_DELAY_MS = 30_000;
+
 /**
- * Retries an async function with exponential backoff.
+ * Retries an async function with exponential backoff and jitter.
  * @param fn - The async function to execute
  * @param retries - Maximum number of retry attempts
  * @param delayMs - Initial delay in milliseconds between retries
@@ -25,13 +27,15 @@ export async function retry<T>(
       lastError = error;
       if (attempt < retries) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        const jitter = Math.random() * currentDelay * 0.3;
+        const actualDelay = Math.min(currentDelay + jitter, MAX_RETRY_DELAY_MS);
         logger.warn(`Retry attempt ${attempt + 1}/${retries} failed: ${errorMessage}`, {
           attempt: attempt + 1,
           maxRetries: retries,
-          nextDelayMs: currentDelay,
+          nextDelayMs: Math.round(actualDelay),
         });
-        await sleep(currentDelay);
-        currentDelay *= backoff;
+        await sleep(actualDelay);
+        currentDelay = Math.min(currentDelay * backoff, MAX_RETRY_DELAY_MS);
       }
     }
   }

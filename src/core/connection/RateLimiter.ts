@@ -10,6 +10,8 @@ import type { RateLimitConfig } from '../../types/config.types.js';
 export class RateLimiter {
   private static instance: RateLimiter | null = null;
   private limiter: Bottleneck;
+  private requestCount = 0;
+  private requestCountResetAt = Date.now();
 
   private constructor(config: RateLimitConfig) {
     this.limiter = new Bottleneck({
@@ -41,7 +43,7 @@ export class RateLimiter {
   static initialize(config: RateLimitConfig): RateLimiter {
     if (!RateLimiter.instance) {
       RateLimiter.instance = new RateLimiter(config);
-      logger.info('RateLimiter initialized', {
+      logger.debug('RateLimiter initialized', {
         maxConcurrent: config.rpcMaxConcurrent,
         requestsPerSecond: config.rpcRequestsPerSecond,
       });
@@ -66,7 +68,20 @@ export class RateLimiter {
    * @returns The result of the function
    */
   async schedule<T>(fn: () => Promise<T>): Promise<T> {
+    this.requestCount++;
     return this.limiter.schedule(fn);
+  }
+
+  /**
+   * Returns and resets the request counter.
+   * Useful for monitoring RPC usage over time.
+   */
+  getAndResetRequestCount(): { count: number; periodMs: number } {
+    const now = Date.now();
+    const result = { count: this.requestCount, periodMs: now - this.requestCountResetAt };
+    this.requestCount = 0;
+    this.requestCountResetAt = now;
+    return result;
   }
 
   /**

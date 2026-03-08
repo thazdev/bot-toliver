@@ -7,7 +7,7 @@ export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 export const BOT_VERSION = '1.0.0';
 
-export const HEALTH_CHECK_INTERVAL_MS = 60_000;
+export const HEALTH_CHECK_INTERVAL_MS = 300_000;
 export const PRICE_CACHE_TTL_SECONDS = 60;
 export const POOL_CACHE_TTL_SECONDS = 30;
 export const STATS_SNAPSHOT_INTERVAL_CRON = '*/15 * * * *';

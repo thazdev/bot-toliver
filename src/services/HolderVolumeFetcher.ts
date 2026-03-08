@@ -1,9 +1,13 @@
 /**
  * Busca holder count e top holder % via Helius DAS API (getTokenAccounts).
  * Usa HELIUS_RPC_URL já configurado.
+ * Cache Redis com TTL de 300s para reduzir requests.
  */
 import { logger } from '../utils/logger.js';
+import { RedisClient } from '../core/cache/RedisClient.js';
 import type { HolderData } from '../types/strategy.types.js';
+
+const HOLDER_CACHE_TTL_SEC = 300;
 
 interface TokenAccount {
   owner: string;
@@ -37,6 +41,18 @@ export class HolderVolumeFetcher {
    * Para tokens novos, 1 página (até 500) é suficiente.
    */
   async fetchHolderData(mintAddress: string): Promise<HolderVolumeResult> {
+    const cacheKey = `holder:${mintAddress}`;
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        logger.debug('HolderVolumeFetcher: cache hit', { mint: mintAddress.slice(0, 12) });
+        return JSON.parse(cached) as HolderVolumeResult;
+      }
+    } catch {
+      // Redis falhou — continuar sem cache
+    }
+
     try {
       const body = {
         jsonrpc: '2.0',
@@ -92,7 +108,7 @@ export class HolderVolumeFetcher {
       const topHolderPercent = total > 0 ? (top1 / total) * 100 : 0;
       const top5HolderPercent = total > 0 ? (top5 / total) * 100 : 0;
 
-      return {
+      const result: HolderVolumeResult = {
         holderData: {
           holderCount,
           topHolderPercent,
@@ -102,6 +118,15 @@ export class HolderVolumeFetcher {
         },
         fromApi: true,
       };
+
+      try {
+        const redis = RedisClient.getInstance().getClient();
+        await redis.set(cacheKey, JSON.stringify(result), 'EX', HOLDER_CACHE_TTL_SEC);
+      } catch {
+        // Non-critical
+      }
+
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const now = Date.now();

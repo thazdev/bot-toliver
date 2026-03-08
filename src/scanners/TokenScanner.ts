@@ -66,30 +66,52 @@ export class TokenScanner {
       const rateLimiter = this.connectionManager.getRateLimiter();
       const connection = this.connectionManager.getConnection();
 
-      const mintPubkey = new PublicKey(mintAddress);
-      const accountInfo = await rateLimiter.schedule(() =>
-        connection.getAccountInfo(mintPubkey),
-      );
-
-      if (!accountInfo) {
-        return { tokenInfo: null, skipReason: TokenScanner.SKIP_ACCOUNT_NOT_FOUND };
-      }
-
-      const data = accountInfo.data;
+      // Cache do getAccountInfo por 60s para evitar RPC requests duplicados
+      const accountCacheKey = `rpc:accountInfo:${mintAddress}`;
       let decimals = 0;
       let supply = '0';
       let hasFreezeAuthority = false;
       let isMutable = false;
 
-      if (data.length >= 82) {
-        decimals = data[44];
-        hasFreezeAuthority = data[45] === 1;
-        const supplyBytes = data.slice(36, 44);
-        supply = Buffer.from(supplyBytes).readBigUInt64LE().toString();
-      }
+      let cachedAccountData: string | null = null;
+      try {
+        const redis = RedisClient.getInstance().getClient();
+        cachedAccountData = await redis.get(accountCacheKey);
+      } catch {}
 
-      if (accountInfo.owner.toBase58() === 'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s') {
-        isMutable = true;
+      if (cachedAccountData) {
+        const parsed = JSON.parse(cachedAccountData) as { decimals: number; supply: string; freeze: boolean; mutable: boolean };
+        decimals = parsed.decimals;
+        supply = parsed.supply;
+        hasFreezeAuthority = parsed.freeze;
+        isMutable = parsed.mutable;
+        logger.debug('TokenScanner: accountInfo cache hit', { mint: mintAddress.slice(0, 12) });
+      } else {
+        const mintPubkey = new PublicKey(mintAddress);
+        const accountInfo = await rateLimiter.schedule(() =>
+          connection.getAccountInfo(mintPubkey),
+        );
+
+        if (!accountInfo) {
+          return { tokenInfo: null, skipReason: TokenScanner.SKIP_ACCOUNT_NOT_FOUND };
+        }
+
+        const data = accountInfo.data;
+        if (data.length >= 82) {
+          decimals = data[44];
+          hasFreezeAuthority = data[45] === 1;
+          const supplyBytes = data.slice(36, 44);
+          supply = Buffer.from(supplyBytes).readBigUInt64LE().toString();
+        }
+
+        if (accountInfo.owner.toBase58() === 'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s') {
+          isMutable = true;
+        }
+
+        try {
+          const redis = RedisClient.getInstance().getClient();
+          await redis.set(accountCacheKey, JSON.stringify({ decimals, supply, freeze: hasFreezeAuthority, mutable: isMutable }), 'EX', 60);
+        } catch {}
       }
 
       const poolInfo = await this.poolScanner.scanForPool(mintAddress);
@@ -113,7 +135,7 @@ export class TokenScanner {
       await this.tokenRepository.upsert(tokenInfo);
 
       this.tokensScanned++;
-      logger.info('TokenScanner: token processed', {
+      logger.debug('TokenScanner: token processed', {
         mintAddress,
         decimals,
         source: tokenInfo.source,

@@ -48,8 +48,8 @@ export function loadConfig(): AppConfig {
       telegramChatId: process.env.TELEGRAM_CHAT_ID ?? '',
     },
     rateLimit: {
-      rpcRequestsPerSecond: parseInt(process.env.RPC_REQUESTS_PER_SECOND ?? '5', 10),
-      rpcMaxConcurrent: parseInt(process.env.RPC_MAX_CONCURRENT ?? '3', 10),
+      rpcRequestsPerSecond: parseInt(process.env.RPC_REQUESTS_PER_SECOND ?? '2', 10),
+      rpcMaxConcurrent: parseInt(process.env.RPC_MAX_CONCURRENT ?? '2', 10),
     },
   };
 
