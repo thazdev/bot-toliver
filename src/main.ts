@@ -296,7 +296,7 @@ async function main(): Promise<void> {
       }
       statsTracker.incrementTokensScanned();
       const poolAddress = payload.tokenInfo.poolAddress?.trim();
-      const preferDex = payload.source === 'PumpFunListener' ? 'pumpfun' : undefined;
+      const preferDex = payload.tokenInfo.poolDex ?? (payload.source === 'PumpFunListener' ? 'pumpfun' : undefined);
       logger.info('TOKEN_SCAN: token ok, buscando pool', { mint: tokenInfo.mintAddress.slice(0, 12), source: payload.source });
       const pool = await poolScanner.scanForPool(
         tokenInfo.mintAddress,
@@ -752,6 +752,7 @@ async function main(): Promise<void> {
   diagnosticsInterval = setInterval(async () => {
     try {
       const redis = RedisClient.getInstance().getClient();
+      const logsNoToken = parseInt((await redis.get('diag:logs_no_token_detected')) ?? '0', 10);
       const total = parseInt((await redis.get('diag:tokens_received_total')) ?? '0', 10);
       const stage1 = parseInt((await redis.get('diag:tokens_stage1_rejected')) ?? '0', 10);
       const stage2 = parseInt((await redis.get('diag:tokens_stage2_rejected')) ?? '0', 10);
@@ -762,7 +763,7 @@ async function main(): Promise<void> {
       const passed = parseInt((await redis.get('diag:tokens_passed')) ?? '0', 10);
 
       logger.info(
-        `[DIAGNOSTICS] Tokens recebidos total: ${total} | ` +
+        `[DIAGNOSTICS] Logs sem token: ${logsNoToken} | Tokens recebidos total: ${total} | ` +
           `Stage 1 (blacklist/honeypot): ${stage1} | Stage 2 (liquidez/authority): ${stage2} | ` +
           `Stage 3 (rug score): ${stage3} | Stage 4 (holders/honeypot/entry): ${stage4} | ` +
           `Stage 5 (market context): ${stage5} | Stage 6 (balance/sizing): ${stage6} | ` +

@@ -14,6 +14,8 @@ export interface TokenScanJobPayload {
   source: string;
   detectedAt: number;
   txSignature?: string;
+  /** Quando true, o worker resolve o mint via getParsedTransaction antes de processar */
+  needsResolution?: boolean;
 }
 
 export interface TradeExecuteJobPayload {

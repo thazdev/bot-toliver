@@ -2,10 +2,14 @@ import { PublicKey } from '@solana/web3.js';
 import { logger } from '../utils/logger.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
 import { CacheService } from '../core/cache/CacheService.js';
+import { RedisClient } from '../core/cache/RedisClient.js';
 import { TokenRepository } from '../core/database/repositories/TokenRepository.js';
+import { WSOL_MINT } from '../utils/constants.js';
 import type { TokenInfo } from '../types/token.types.js';
 import type { TokenScanJobPayload } from '../types/queue.types.js';
 import type { PoolScanner } from './PoolScanner.js';
+
+const RESOLVE_CACHE_TTL_SEC = 300; // 5 min
 
 /**
  * Scans and enriches newly detected tokens with on-chain data.
@@ -38,7 +42,15 @@ export class TokenScanner {
    * @returns { tokenInfo, skipReason } — tokenInfo quando ok, skipReason quando ignorado
    */
   async processToken(payload: TokenScanJobPayload): Promise<{ tokenInfo: TokenInfo | null; skipReason?: string }> {
-    const mintAddress = payload.tokenInfo.mintAddress;
+    let mintAddress = payload.tokenInfo.mintAddress;
+
+    if (!mintAddress && payload.needsResolution && payload.txSignature) {
+      const resolved = await this.resolveTokenFromSignature(payload.txSignature);
+      if (resolved) {
+        mintAddress = resolved;
+        payload.tokenInfo.mintAddress = resolved;
+      }
+    }
 
     if (!mintAddress) {
       return { tokenInfo: null, skipReason: TokenScanner.SKIP_NO_MINT };
@@ -116,6 +128,49 @@ export class TokenScanner {
         error: errorMsg,
       });
       return { tokenInfo: null, skipReason: TokenScanner.SKIP_ERROR };
+    }
+  }
+
+  /**
+   * Resolve mint address from transaction signature via getParsedTransaction.
+   * Usa cache Redis 5 min para evitar resolver a mesma tx duas vezes.
+   */
+  private async resolveTokenFromSignature(signature: string): Promise<string | null> {
+    const cacheKey = `resolve:tx:${signature}`;
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      const cached = await redis.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // Redis indisponível — continua sem cache
+    }
+
+    try {
+      const connection = this.connectionManager.getConnection();
+      const rateLimiter = this.connectionManager.getRateLimiter();
+      const tx = await rateLimiter.schedule(() =>
+        connection.getParsedTransaction(signature, {
+          maxSupportedTransactionVersion: 0,
+          commitment: 'confirmed',
+        }),
+      );
+      if (!tx?.meta?.postTokenBalances?.length) return null;
+
+      const preMints = new Set((tx.meta.preTokenBalances ?? []).map((b) => b.mint));
+      const newMint = tx.meta.postTokenBalances.find((b) => !preMints.has(b.mint));
+      const mint = newMint?.mint ?? tx.meta.postTokenBalances[0]?.mint ?? null;
+      if (mint && mint !== WSOL_MINT) {
+        try {
+          const redis = RedisClient.getInstance().getClient();
+          await redis.setex(cacheKey, RESOLVE_CACHE_TTL_SEC, mint);
+        } catch {
+          // ignora falha de cache
+        }
+        return mint;
+      }
+      return null;
+    } catch {
+      return null;
     }
   }
 

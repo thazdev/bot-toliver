@@ -1,6 +1,7 @@
 import { PublicKey, type Logs } from '@solana/web3.js';
 import { BaseListener } from './BaseListener.js';
 import { ConnectionManager } from '../core/connection/ConnectionManager.js';
+import { RedisClient } from '../core/cache/RedisClient.js';
 import { BotHealthMonitor } from '../monitoring/BotHealthMonitor.js';
 import { isBotEnabled } from '../config/BotEnabledResolver.js';
 import { isConnectionsPaused } from '../config/ConnectionsPausedResolver.js';
@@ -9,20 +10,23 @@ import {
   RAYDIUM_AMM_V4,
   PUMP_FUN_PROGRAM,
 } from '../utils/constants.js';
+import { QueueName } from '../types/queue.types.js';
 import type { QueueManager } from '../core/queue/QueueManager.js';
+import type { TokenScanJobPayload } from '../types/queue.types.js';
 
 const RAYDIUM_CLMM = process.env.RAYDIUM_CLMM_PROGRAM ?? 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
 
-interface DiscoveredToken {
-  tokenMint: string;
-  poolAddress: string;
-  blockTime: number;
-  initialLiquiditySOL: number;
-  source: 'raydium' | 'raydium_clmm' | 'pumpfun';
+interface DetectedToken {
+  mintAddress: string | null;
+  poolAddress?: string;
+  source: 'pumpfun' | 'raydium' | 'raydium_clmm';
+  signature: string;
+  needsResolution?: boolean;
+  initialLiquiditySOL?: number;
 }
 
-const LOG_THROTTLE_MS = 30_000; // 30s para logs de diagnóstico repetitivos
-const DISCOVERY_LOG_INTERVAL_MS = 15_000; // 15s para "new token discovered"
+const LOG_THROTTLE_MS = 30_000;
+const DISCOVERY_LOG_INTERVAL_MS = 15_000;
 
 export class LogsListener extends BaseListener {
   private subscriptionIds: number[] = [];
@@ -38,6 +42,9 @@ export class LogsListener extends BaseListener {
   private tokenCounter = 0;
   private poolCounter = 0;
   private discoveryHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Discriminator da instrução Create: sha256("global:create")[0:8] */
+  private static readonly CREATE_DISCRIMINATOR = Buffer.from([24, 30, 200, 40, 5, 28, 7, 119]);
 
   constructor(queueManager: QueueManager) {
     super('LogsListener', queueManager);
@@ -61,15 +68,14 @@ export class LogsListener extends BaseListener {
         const subId = connection.onLogs(
           pubkey,
           (logs: Logs) => {
-            // PASSO 1: Log bruto ANTES de qualquer parsing — diagnóstico WebSocket
-            logger.info('RAW_LOG_RECEIVED', {
+            logger.debug('RAW_LOG_RECEIVED', {
               program: program.id,
               signature: logs.signature,
               logsCount: logs.logs?.length ?? 0,
               firstLog: logs.logs?.[0]?.substring(0, 100),
             });
             if (!this.isActive) return;
-            void this.processLogs(program.name, logs);
+            void this.processLogs(program.name, program.id, logs);
           },
           commitment,
         );
@@ -96,111 +102,143 @@ export class LogsListener extends BaseListener {
     }, 60_000);
   }
 
-  private async processLogs(programName: string, logs: Logs): Promise<void> {
+  private async processLogs(programName: string, programId: string, logs: Logs): Promise<void> {
     if (!this.isActive || isConnectionsPaused() || !(await isBotEnabled())) return;
     BotHealthMonitor.recordEvent();
     this.logBatchCount++;
     this.eventCounter++;
+
+    const logMessages = logs.logs ?? [];
+    const signature = logs.signature;
+
+    const detected = this.parseLogsForToken(logMessages, signature, programId);
+    if (!detected) {
+      try {
+        const redis = RedisClient.getInstance().getClient();
+        await redis.incr('diag:logs_no_token_detected');
+      } catch {
+        // ignora
+      }
+      logger.debug('LOG_NO_TOKEN', { signature, program: programId });
+      return;
+    }
+
+    logger.info('TOKEN_DETECTED', {
+      source: detected.source,
+      signature: detected.signature,
+      mint: detected.mintAddress ?? 'resolving...',
+      needsResolution: detected.needsResolution,
+    });
+
     const now = Date.now();
     if (now - this.lastLogInfoAt > 60_000) {
+      this.lastLogInfoAt = now;
       logger.info('LogsListener: WebSocket recebendo logs', {
         batchesReceived: this.logBatchCount,
         program: programName,
       });
-      this.lastLogInfoAt = now;
     }
 
-    try {
-      const logMessages = logs.logs;
-      const signature = logs.signature;
-      const processStartMs = Date.now();
+    if (detected.needsResolution) {
+      await this.enqueueForResolution(detected);
+      return;
+    }
 
-      if (programName.includes('Raydium')) {
-        await this.processRaydiumLogs(programName, logMessages, signature, processStartMs);
-      } else if (programName.includes('Pump')) {
-        await this.processPumpFunLogs(logMessages, signature, processStartMs);
+    if (detected.mintAddress && detected.mintAddress.length >= 32) {
+      await this.emitPoolCreated(detected);
+    }
+  }
+
+  private parseLogsForToken(logs: string[], signature: string, program: string): DetectedToken | null {
+    if (program === PUMP_FUN_PROGRAM) {
+      const hasCreate = logs.some(
+        (l) => l.includes('Program log: Create') || l.includes('Instruction: Create'),
+      );
+      const hasInitAccount = logs.some(
+        (l) =>
+          l.includes('InitializeAccount3') ||
+          l.includes('Initialize the associated token account'),
+      );
+
+      if (hasCreate && hasInitAccount) {
+        const mint = this.extractMintFromPumpFunLogs(logs);
+        if (mint) {
+          const poolAddress = this.extractPoolFromPumpFunLogs(logs);
+          return {
+            mintAddress: mint,
+            poolAddress,
+            source: 'pumpfun',
+            signature,
+            initialLiquiditySOL: 30,
+          };
+        }
+        return {
+          mintAddress: null,
+          source: 'pumpfun',
+          signature,
+          needsResolution: true,
+        };
       }
-    } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('LogsListener: error processing logs', {
-        program: programName,
-        error: errorMsg,
-      });
     }
+
+    if (program === RAYDIUM_AMM_V4) {
+      const hasInitialize = logs.some(
+        (l) =>
+          l.includes('initialize2') ||
+          l.includes('Instruction: Initialize2') ||
+          l.includes('ray_log'),
+      );
+      if (hasInitialize) {
+        const extracted = this.extractTokenFromRaydiumLogs(logs);
+        if (extracted.tokenMint) {
+          return {
+            mintAddress: extracted.tokenMint,
+            poolAddress: extracted.poolAddress,
+            source: 'raydium',
+            signature,
+            initialLiquiditySOL: extracted.initialLiquiditySOL,
+          };
+        }
+        return { mintAddress: null, source: 'raydium', signature, needsResolution: true };
+      }
+    }
+
+    if (program === RAYDIUM_CLMM) {
+      const hasPoolCreation = logs.some(
+        (l) =>
+          l.includes('CreatePool') ||
+          l.includes('OpenPosition') ||
+          l.includes('Instruction: CreatePool'),
+      );
+      if (hasPoolCreation) {
+        const extracted = this.extractTokenFromRaydiumLogs(logs);
+        if (extracted.tokenMint) {
+          return {
+            mintAddress: extracted.tokenMint,
+            poolAddress: extracted.poolAddress,
+            source: 'raydium_clmm',
+            signature,
+            initialLiquiditySOL: extracted.initialLiquiditySOL,
+          };
+        }
+        return { mintAddress: null, source: 'raydium_clmm', signature, needsResolution: true };
+      }
+    }
+
+    return null;
   }
 
-  private async processRaydiumLogs(
-    programName: string,
-    logMessages: string[],
-    signature: string,
-    processStartMs: number,
-  ): Promise<void> {
-    const hasInitialize2 = logMessages.some(
-      (log) => log.includes('initialize2') || log.includes('Initialize2'),
-    );
-
-    if (!hasInitialize2) return;
-
-    const discovered = this.extractTokenFromLogs(logMessages);
-    const source = programName.includes('CLMM') ? 'raydium_clmm' : 'raydium';
-
-    // PASSO 2: Log quando parse falha em detectar token
-    const hasToken = !!(discovered.tokenMint && discovered.tokenMint.length >= 32);
-    if (!hasToken) {
-      logger.info('LOG_PARSE_FAILED', {
-        program: programName,
-        logs: logMessages,
-        signature,
-      });
-    }
-
-    await this.fetchBlockTimeAndEmit(signature, discovered, source, processStartMs);
+  private extractMintFromPumpFunLogs(logMessages: string[]): string | null {
+    const result = this.extractTokenFromProgramData(logMessages);
+    return result.tokenMint && result.tokenMint.length >= 32 ? result.tokenMint : null;
   }
 
-  private async processPumpFunLogs(
-    logMessages: string[],
-    signature: string,
-    processStartMs: number,
-  ): Promise<void> {
-    const pumpProgramPrefix = `Program ${PUMP_FUN_PROGRAM}`;
-    const isPumpFunInvocation = logMessages.some((log) => log.startsWith(pumpProgramPrefix));
-    if (!isPumpFunInvocation) return;
-
-    const hasCreate = logMessages.some(
-      (log) => log.includes('Program log: Create') || log.includes('Program log: Instruction: Create'),
-    );
-    const hasMintTo = logMessages.some((log) => log.includes('MintTo'));
-    const hasInitializeAccount = logMessages.some((log) => log.includes('InitializeAccount'));
-
-    if (!hasCreate && !(hasMintTo && hasInitializeAccount)) return;
-
-    // Pump.fun Create: dados vêm em "Program data:" base64, não em mint:/pool: texto
-    let discovered = this.extractTokenFromProgramData(logMessages);
-    if (!discovered.tokenMint) {
-      discovered = this.extractTokenFromLogs(logMessages);
-    }
-
-    // PASSO 2: Log quando parse falha em detectar token
-    const hasToken = !!(discovered.tokenMint && discovered.tokenMint.length >= 32);
-    if (!hasToken) {
-      logger.info('LOG_PARSE_FAILED', {
-        program: 'Pump.fun',
-        logs: logMessages,
-        signature,
-      });
-    }
-
-    await this.fetchBlockTimeAndEmit(signature, discovered, 'pumpfun', processStartMs);
+  private extractPoolFromPumpFunLogs(logMessages: string[]): string | undefined {
+    const result = this.extractTokenFromProgramData(logMessages);
+    return result.poolAddress && result.poolAddress.length >= 32 ? result.poolAddress : undefined;
   }
 
-  /** Discriminator da instrução Create: sha256("global:create")[0:8] */
-  private static readonly CREATE_DISCRIMINATOR = Buffer.from([24, 30, 200, 40, 5, 28, 7, 119]);
-
-  /**
-   * Extrai tokenMint e poolAddress do "Program data:" base64 (Pump.fun Create).
-   * Só processa dados com discriminator Create.
-   */
-  private extractTokenFromProgramData(logMessages: string[]): Partial<DiscoveredToken> {
+  private extractTokenFromProgramData(logMessages: string[]): { tokenMint?: string; poolAddress?: string } {
     for (const log of logMessages) {
       if (!log.startsWith('Program data:')) continue;
       const base64 = log.replace(/^Program data:\s*/, '').trim();
@@ -221,7 +259,7 @@ export class LogsListener extends BaseListener {
         if (offset + 32 + 32 > buf.length) continue;
         const mint = new PublicKey(buf.subarray(offset, offset + 32)).toBase58();
         const bondingCurve = new PublicKey(buf.subarray(offset + 32, offset + 64)).toBase58();
-        return { tokenMint: mint, poolAddress: bondingCurve, initialLiquiditySOL: 30 };
+        return { tokenMint: mint, poolAddress: bondingCurve };
       } catch {
         // ignora
       }
@@ -229,139 +267,88 @@ export class LogsListener extends BaseListener {
     return {};
   }
 
-  private extractTokenFromLogs(logMessages: string[]): Partial<DiscoveredToken> {
+  private extractTokenFromRaydiumLogs(logMessages: string[]): {
+    tokenMint: string;
+    poolAddress: string;
+    initialLiquiditySOL: number;
+  } {
     let tokenMint = '';
     let poolAddress = '';
     let initialLiquiditySOL = 0;
 
     for (const log of logMessages) {
       const mintMatch = log.match(/mint[=:\s]*([A-Za-z0-9]{32,44})/i);
-      if (mintMatch && !tokenMint) {
-        tokenMint = mintMatch[1];
-      }
+      if (mintMatch && !tokenMint) tokenMint = mintMatch[1];
 
       const poolMatch = log.match(/pool[=:\s]*([A-Za-z0-9]{32,44})/i);
-      if (poolMatch && !poolAddress) {
-        poolAddress = poolMatch[1];
-      }
+      if (poolMatch && !poolAddress) poolAddress = poolMatch[1];
 
       const liqMatch = log.match(/init_pc_amount:\s*(\d+)/);
-      if (liqMatch) {
-        initialLiquiditySOL = parseInt(liqMatch[1], 10) / 1_000_000_000;
-      }
+      if (liqMatch) initialLiquiditySOL = parseInt(liqMatch[1], 10) / 1_000_000_000;
     }
 
     return { tokenMint, poolAddress, initialLiquiditySOL };
   }
 
-  private async fetchBlockTimeAndEmit(
-    signature: string,
-    discovered: Partial<DiscoveredToken>,
-    source: 'raydium' | 'raydium_clmm' | 'pumpfun',
-    processStartMs: number,
-  ): Promise<void> {
-    try {
-      let blockTime = Math.floor(Date.now() / 1000);
-      const hasTokenFromLogs = !!(discovered.tokenMint && discovered.tokenMint.length >= 32);
+  private async enqueueForResolution(detected: DetectedToken): Promise<void> {
+    const poolDex = detected.source === 'pumpfun' ? 'pumpfun' : 'raydium';
+    const payload: TokenScanJobPayload = {
+      tokenInfo: { poolDex, source: detected.source },
+      source: this.name,
+      detectedAt: Date.now(),
+      txSignature: detected.signature,
+      needsResolution: true,
+    };
+    await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'token-resolve', payload as unknown as Record<string, unknown>);
+    this.tokenCounter++;
+    this.poolCounter++;
+  }
 
-      if (!hasTokenFromLogs) {
-        const connection = this.connectionManager.getConnection();
-        const rateLimiter = this.connectionManager.getRateLimiter();
-        try {
-          const tx = await rateLimiter.schedule(() =>
-            connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 }),
-          );
-          if (tx?.blockTime) blockTime = tx.blockTime;
-          if (tx?.transaction?.message) {
-            const accountKeys = tx.transaction.message.getAccountKeys
-              ? tx.transaction.message.getAccountKeys().staticAccountKeys
-              : [];
-            if (accountKeys.length > 0 && !discovered.tokenMint) {
-              discovered.tokenMint = accountKeys[accountKeys.length - 1]?.toBase58() ?? '';
-            }
-            if (accountKeys.length > 1 && !discovered.poolAddress) {
-              discovered.poolAddress = accountKeys[1]?.toBase58() ?? '';
-            }
-          }
-        } catch {
-          if (Date.now() - this.lastFetchTxErrorAt > LOG_THROTTLE_MS) {
-            this.lastFetchTxErrorAt = Date.now();
-            logger.debug('LogsListener: could not fetch tx details, using Date.now()', { signature });
-          }
-        }
-      }
+  private async emitPoolCreated(detected: DetectedToken): Promise<void> {
+    const tokenMint = detected.mintAddress!;
+    const poolAddress = detected.poolAddress ?? '';
+    const minLiq = parseFloat(process.env.MIN_LIQUIDITY_SOL ?? '0');
+    const liquiditySol = detected.initialLiquiditySOL ?? 0;
 
-      const latencyMs = Date.now() - (blockTime * 1000);
-
-      const now = Date.now();
-      if (now - this.lastDiscoveryLogAt > DISCOVERY_LOG_INTERVAL_MS) {
-        this.lastDiscoveryLogAt = now;
-        logger.info('LogsListener: new token discovered', {
-          source,
-          tokenMint: (discovered.tokenMint ?? '').slice(0, 8),
-          poolAddress: (discovered.poolAddress ?? '').slice(0, 8),
-          initialLiquiditySOL: discovered.initialLiquiditySOL ?? 0,
-          discoveryLatencyMs: latencyMs,
+    if (minLiq > 0 && liquiditySol < minLiq) {
+      if (Date.now() - this.lastLiquidityBelowAt > LOG_THROTTLE_MS) {
+        this.lastLiquidityBelowAt = Date.now();
+        logger.debug('LogsListener: token ignorado (liquidez abaixo do mínimo)', {
+          liquiditySol,
+          minLiquiditySol: minLiq,
+          tokenMint: tokenMint.slice(0, 8),
         });
       }
+      return;
+    }
 
-      const latencyThreshold = parseInt(process.env.DISCOVERY_LATENCY_WARN_MS ?? '5000', 10);
-      if (latencyMs > latencyThreshold && Date.now() - this.lastLatencyWarnAt > LOG_THROTTLE_MS) {
-        this.lastLatencyWarnAt = Date.now();
-        logger.debug('LogsListener: discovery latency alta (queue pode estar cheia)', {
-          latencyMs,
-          source,
-          tokenMint: (discovered.tokenMint ?? '').slice(0, 8),
-        });
-      }
-
-      const poolAddress = discovered.poolAddress ?? '';
-      const tokenMint = discovered.tokenMint ?? '';
-      if (!tokenMint || tokenMint.length < 32) {
-        if (Date.now() - this.lastNoTokenMintAt > LOG_THROTTLE_MS) {
-          this.lastNoTokenMintAt = Date.now();
-          logger.debug('LogsListener: ignorando discovery sem tokenMint', { poolAddress: poolAddress.slice(0, 8) });
-        }
-        return;
-      }
-      const liquiditySol = discovered.initialLiquiditySOL ?? 0;
-      const minLiq = parseFloat(process.env.MIN_LIQUIDITY_SOL ?? '0');
-      if (minLiq > 0 && liquiditySol < minLiq) {
-        if (Date.now() - this.lastLiquidityBelowAt > LOG_THROTTLE_MS) {
-          this.lastLiquidityBelowAt = Date.now();
-          logger.debug('LogsListener: token ignorado (liquidez abaixo do mínimo)', {
-            liquiditySol,
-            minLiquiditySol: minLiq,
-            tokenMint: tokenMint.slice(0, 8),
-          });
-        }
-        return;
-      }
-
-      const dex: 'pumpfun' | 'raydium' = source === 'pumpfun' ? 'pumpfun' : 'raydium';
-      const poolData: import('../types/pool.types.js').PoolInfo = {
-        poolAddress,
-        tokenMint,
-        quoteMint: '',
-        dex,
-        liquidity: liquiditySol,
-        price: 0,
-        volume24h: 0,
-        createdAt: new Date(blockTime * 1000),
-        isActive: true,
-      };
-      this.tokenCounter++;
-      this.poolCounter++;
-      // Emite apenas POOL_CREATED (evita job duplicado — antes emitíamos POOL_CREATED + TOKEN_DETECTED)
-      this.onEvent({ type: 'POOL_CREATED', timestamp: blockTime * 1000, data: poolData });
-    } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('LogsListener: failed to fetch block time and emit', {
-        signature,
-        source,
-        error: errorMsg,
+    const now = Date.now();
+    if (now - this.lastDiscoveryLogAt > DISCOVERY_LOG_INTERVAL_MS) {
+      this.lastDiscoveryLogAt = now;
+      logger.info('LogsListener: new token discovered', {
+        source: detected.source,
+        tokenMint: tokenMint.slice(0, 8),
+        poolAddress: poolAddress.slice(0, 8),
+        initialLiquiditySOL: liquiditySol,
       });
     }
+
+    this.tokenCounter++;
+    this.poolCounter++;
+
+    const dex: 'pumpfun' | 'raydium' = detected.source === 'pumpfun' ? 'pumpfun' : 'raydium';
+    const poolData: import('../types/pool.types.js').PoolInfo = {
+      poolAddress,
+      tokenMint,
+      quoteMint: '',
+      dex,
+      liquidity: liquiditySol,
+      price: 0,
+      volume24h: 0,
+      createdAt: new Date(),
+      isActive: true,
+    };
+    this.onEvent({ type: 'POOL_CREATED', timestamp: Date.now(), data: poolData });
   }
 
   async stop(): Promise<void> {

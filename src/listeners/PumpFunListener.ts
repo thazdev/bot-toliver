@@ -37,8 +37,7 @@ export class PumpFunListener extends BaseListener {
       this.subscriptionId = connection.onLogs(
         pumpFunPubkey,
         (logs: Logs) => {
-          // PASSO 1: Log bruto ANTES de qualquer parsing — diagnóstico WebSocket
-          logger.info('RAW_LOG_RECEIVED', {
+          logger.debug('RAW_LOG_RECEIVED', {
             program: PUMP_FUN_PROGRAM,
             signature: logs.signature,
             logsCount: logs.logs?.length ?? 0,
