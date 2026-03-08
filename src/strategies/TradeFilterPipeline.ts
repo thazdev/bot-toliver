@@ -117,6 +117,20 @@ export class TradeFilterPipeline {
     logger.info('PIPELINE_TELEMETRY', { telemetry });
     if (!step3.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
+    // Log obrigatório: confirmação de passagem Stage 2 → Stage 3
+    logger.info('STAGE2_PASSED', { tokenMint: tokenMint.slice(0, 12) });
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      await redis.incr('diag:stage2_passed');
+    } catch (/* non-critical */) {}
+
+    // Log obrigatório: entrada no Stage 3 (deep_analysis)
+    logger.info('STAGE3_ENTRY', { tokenMint: tokenMint.slice(0, 12) });
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      await redis.incr('diag:stage3_entries');
+    } catch (/* non-critical */) {}
+
     const step4 = this.step4DeepAnalysis(context);
     steps.push(step4);
     telemetry.stage4_result = step4.passed ? 'passed' : `rejected: ${step4.reason}`;
@@ -238,10 +252,10 @@ export class TradeFilterPipeline {
       return { step: 'basic_viability', passed: false, reason: 'Mint authority not disabled', durationMs: Date.now() - start };
     }
 
+    // Freeze authority: penalizar em vez de rejeitar (para teste)
     if (!context.safetyData.freezeAuthorityAbsent) {
-      const reasonCode = 'freeze_authority_set';
-      await this.logStage2Rejection(tokenMint, reasonCode, 'Freeze authority present');
-      return { step: 'basic_viability', passed: false, reason: 'Freeze authority present', durationMs: Date.now() - start };
+      context.safetyData.rugScore -= 20;
+      logger.debug('FREEZE_AUTH_PENALTY', { tokenMint: tokenMint.slice(0, 12), rugScoreAfter: context.safetyData.rugScore });
     }
 
     if (context.safetyData.rugScore < this.filterConfig.minRugScoreStep3) {
@@ -432,7 +446,7 @@ export class TradeFilterPipeline {
   }
 
   private getStage1ReasonCode(reason: string): string {
-    if (!reason || reason.trim() === '') return 'unknown';
+    if (!reason || reason.trim() === '') return 'outros';
     if (reason.includes('Blacklisted address')) return 'blacklist';
     if (reason.includes('Known rug dev')) return 'known_rug_dev';
     if (reason.includes('Known honeypot')) return 'honeypot_db';
@@ -443,14 +457,15 @@ export class TradeFilterPipeline {
   }
 
   private async logStage1Rejection(tokenMint: string, reasonCode: string, details: string): Promise<void> {
+    const code = reasonCode || 'outros';
     logger.info('STAGE1_REJECT_REASON', {
       tokenMint: tokenMint.slice(0, 12),
-      reason: reasonCode,
-      details,
+      reason: code,
+      rawReason: details || 'undefined',
     });
     try {
       const redis = RedisClient.getInstance().getClient();
-      await redis.incr(`diag:stage1_reject_${reasonCode}`);
+      await redis.incr(`diag:stage1_reject_${code}`);
     } catch {
       // ignora
     }

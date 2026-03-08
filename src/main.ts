@@ -760,6 +760,7 @@ async function main(): Promise<void> {
       const s1RugDev = parseInt((await redis.get('diag:stage1_reject_known_rug_dev')) ?? '0', 10);
       const s1TokenNew = parseInt((await redis.get('diag:stage1_reject_token_too_new')) ?? '0', 10);
       const s1Outros = parseInt((await redis.get('diag:stage1_reject_outros')) ?? '0', 10);
+      const s1Unknown = parseInt((await redis.get('diag:stage1_reject_unknown')) ?? '0', 10);
       const s1TokenBlacklisted = parseInt((await redis.get('diag:stage1_reject_token_blacklisted')) ?? '0', 10);
       const s1Emergency = parseInt((await redis.get('diag:stage1_reject_emergency_halt')) ?? '0', 10);
       const stage2 = parseInt((await redis.get('diag:tokens_stage2_rejected')) ?? '0', 10);
@@ -769,6 +770,8 @@ async function main(): Promise<void> {
       const s2RugScore = parseInt((await redis.get('diag:stage2_reject_rug_score_too_low')) ?? '0', 10);
       const s2FetchFailed = parseInt((await redis.get('diag:stage2_reject_fetch_failed')) ?? '0', 10);
       const s2Outros = parseInt((await redis.get('diag:stage2_reject_outros')) ?? '0', 10);
+      const stage2Passed = parseInt((await redis.get('diag:stage2_passed')) ?? '0', 10);
+      const stage3Entries = parseInt((await redis.get('diag:stage3_entries')) ?? '0', 10);
       const stage3 = parseInt((await redis.get('diag:tokens_stage3_rejected')) ?? '0', 10);
       const stage4 = parseInt((await redis.get('diag:tokens_stage4_rejected')) ?? '0', 10);
       const stage5 = parseInt((await redis.get('diag:tokens_stage5_rejected')) ?? '0', 10);
@@ -777,8 +780,8 @@ async function main(): Promise<void> {
 
       logger.info(
         `[DIAGNOSTICS] Logs sem token: ${logsNoToken} | Tokens recebidos total: ${total} | ` +
-          `Stage 1: ${stage1} (blacklist:${s1Blacklist} honeypot_db:${s1Honeypot} known_rug_dev:${s1RugDev} token_too_new:${s1TokenNew} token_blacklisted:${s1TokenBlacklisted} emergency:${s1Emergency} outros:${s1Outros}) | ` +
-          `Stage 2: ${stage2} (liquidity:${s2Liquidity} mint_auth:${s2MintAuth} freeze_auth:${s2FreezeAuth} rug_score:${s2RugScore} fetch_failed:${s2FetchFailed} outros:${s2Outros}) | ` +
+          `Stage 1: ${stage1} (blacklist:${s1Blacklist} honeypot_db:${s1Honeypot} known_rug_dev:${s1RugDev} token_too_new:${s1TokenNew} token_blacklisted:${s1TokenBlacklisted} emergency:${s1Emergency} outros:${s1Outros} unknown:${s1Unknown}) | ` +
+          `Stage 2: ${stage2} (liquidity:${s2Liquidity} mint_auth:${s2MintAuth} freeze_auth:${s2FreezeAuth} rug_score:${s2RugScore} fetch_failed:${s2FetchFailed} outros:${s2Outros}) s2_passed:${stage2Passed} s3_entries:${stage3Entries} | ` +
           `Stage 3: ${stage3} | Stage 4: ${stage4} | Stage 5: ${stage5} | Stage 6: ${stage6} | Passaram: ${passed}`,
       );
     } catch (err) {
