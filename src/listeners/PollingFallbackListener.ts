@@ -34,22 +34,27 @@ export class PollingFallbackListener extends BaseListener {
   }
 
   async start(): Promise<void> {
-    if (process.env.POLLING_FALLBACK_ENABLED !== 'true') {
-      logger.info('PollingFallbackListener: desativado (POLLING_FALLBACK_ENABLED != true)');
+    const enabled = /^(true|1|yes)$/i.test(String(process.env.POLLING_FALLBACK_ENABLED ?? '').trim());
+    if (!enabled) {
+      logger.info('PollingFallbackListener: desativado. Ative com POLLING_FALLBACK_ENABLED=true');
+      console.log('[PollingFallback] Desativado — defina POLLING_FALLBACK_ENABLED=true no Railway (variáveis do BOT)');
       return;
     }
 
     this.isActive = true;
-    this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
-    logger.info('PollingFallbackListener: iniciado', {
+    console.log('[PollingFallback] ATIVO — detectando pools via polling a cada', POLL_INTERVAL_MS / 1000, 'segundos');
+    logger.info('PollingFallbackListener: INICIADO (fallback ativo)', {
       intervalMs: POLL_INTERVAL_MS,
       programs: ['Raydium AMM', 'PumpFun', 'Raydium CLMM'],
     });
+    this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+    setTimeout(() => this.poll().catch((e) => logger.debug('PollingFallbackListener: erro no primeiro poll', { err: String(e) })), 10_000);
   }
 
   private async poll(): Promise<void> {
     if (!this.isActive) return;
 
+    let totalChecked = 0;
     const programs = [
       { name: 'Raydium AMM V4', id: RAYDIUM_AMM_V4 },
       { name: 'Pump.fun', id: PUMP_FUN_PROGRAM },
@@ -68,6 +73,7 @@ export class PollingFallbackListener extends BaseListener {
         );
 
         for (const sig of sigs) {
+          totalChecked++;
           if (!sig.signature || this.seenSignatures.has(sig.signature)) continue;
           if (this.seenSignatures.size >= SEEN_CAP) {
             const first = this.seenSignatures.values().next().value;
@@ -139,6 +145,8 @@ export class PollingFallbackListener extends BaseListener {
         logger.debug('PollingFallbackListener: erro no poll', { program: program.name, error: err });
       }
     }
+
+    logger.info('PollingFallbackListener: poll executado', { signaturesVerificadas: totalChecked });
   }
 
   private parseLogs(logMessages: string[], programName: string): DiscoveredToken | null {
