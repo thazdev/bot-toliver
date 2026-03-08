@@ -4,7 +4,6 @@ import { PrismaClient } from '@prisma/client';
 import { dashboardConfig } from '@/config/dashboard.config';
 
 const POSITION_UPDATE_INTERVAL = 10_000;
-const HEALTH_CHECK_INTERVAL = 15_000;
 
 export function initSocketHandlers(io: Server) {
   const prisma = new PrismaClient();
@@ -82,24 +81,6 @@ export function initSocketHandlers(io: Server) {
     } catch {}
   }, POSITION_UPDATE_INTERVAL);
 
-  // Poll bot health (status vem do bot via Redis, não do env)
-  const healthInterval = setInterval(async () => {
-    try {
-      const raw = await redisClient.get('bot_health');
-
-      if (raw) {
-        const health = JSON.parse(raw);
-        const status = health.status ?? 'RUNNING';
-        io.emit('bot_status', {
-          id: `health-${Date.now()}`,
-          type: 'alert',
-          message: `Bot status: ${status}`,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    } catch {}
-  }, HEALTH_CHECK_INTERVAL);
-
   // Monitor recent trades for activity feed
   let lastTradeCheck = new Date();
   const tradeInterval = setInterval(async () => {
@@ -150,7 +131,6 @@ export function initSocketHandlers(io: Server) {
 
   process.on('SIGTERM', () => {
     clearInterval(positionInterval);
-    clearInterval(healthInterval);
     clearInterval(tradeInterval);
     redisSub.disconnect();
     redisClient.disconnect();

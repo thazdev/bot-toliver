@@ -350,6 +350,9 @@ async function main(): Promise<void> {
           return;
         }
 
+        const results = await strategyRegistry.evaluateAll(context);
+        const buySignal = strategyRegistry.getBestBuySignal(results);
+
         const guardStatus = tradingGuard.evaluateToken(tokenInfo.mintAddress, context);
         if (!guardStatus.canTrade) {
           logger.info('TradingGuard blocked trade', {

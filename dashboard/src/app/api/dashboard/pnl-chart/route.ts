@@ -7,12 +7,13 @@ export async function GET(req: NextRequest) {
   if (error) return error;
 
   const range = req.nextUrl.searchParams.get('range') ?? '24h';
-  const since = new Date();
+  const now = new Date();
+  const since = new Date(now);
 
   if (range === '7d') {
-    since.setDate(since.getDate() - 7);
+    since.setUTCDate(since.getUTCDate() - 7);
   } else {
-    since.setHours(since.getHours() - 24);
+    since.setUTCHours(since.getUTCHours() - 24);
   }
 
   const positions = await prisma.position.findMany({
@@ -24,14 +25,14 @@ export async function GET(req: NextRequest) {
   const points = positions.map((p) => {
     cumulative += Number(p.pnlSol);
     return {
-      timestamp: p.closedAt?.toISOString() ?? new Date().toISOString(),
+      timestamp: p.closedAt?.toISOString() ?? now.toISOString(),
       cumulativePnl: cumulative,
     };
   });
 
-  if (points.length === 0) {
-    points.push({ timestamp: new Date().toISOString(), cumulativePnl: 0 });
-  }
+  const startPoint = { timestamp: since.toISOString(), cumulativePnl: 0 };
+  const endPoint = { timestamp: now.toISOString(), cumulativePnl: points.at(-1)?.cumulativePnl ?? 0 };
+  const result = points.length > 0 ? [startPoint, ...points] : [startPoint, endPoint];
 
-  return NextResponse.json(points);
+  return NextResponse.json(result);
 }

@@ -45,12 +45,10 @@ export function ActivityFeed() {
 
     socket.on('trade_executed', handler);
     socket.on('alert', handler);
-    socket.on('bot_status', handler);
 
     return () => {
       socket.off('trade_executed', handler);
       socket.off('alert', handler);
-      socket.off('bot_status', handler);
     };
   }, [socket]);
 
