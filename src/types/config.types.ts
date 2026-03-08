@@ -13,6 +13,8 @@ export interface DatabaseConfig {
   user: string;
   password: string;
   database: string;
+  /** Connection URL (mysql://user:pass@host:port/db) — prioridade sobre host/port/user/password */
+  url?: string;
 }
 
 export interface RedisConfig {

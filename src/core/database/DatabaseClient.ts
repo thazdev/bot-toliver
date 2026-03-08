@@ -25,9 +25,12 @@ export class DatabaseClient {
       keepAliveInitialDelay: 10000,
     };
 
-    this.pool = mysql.createPool(poolOptions);
+    this.pool = config.url
+      ? mysql.createPool(`${config.url}${config.url.includes('?') ? '&' : '?'}connectionLimit=${DB_POOL_SIZE}`)
+      : mysql.createPool(poolOptions);
+    const displayHost = config.url ? config.url.replace(/:[^:@]+@/, ':****@').replace(/\/\/[^/]+/, '//***').slice(0, 60) : config.host;
     logger.info('DatabaseClient pool created', {
-      host: config.host,
+      host: displayHost,
       database: config.database,
       poolSize: DB_POOL_SIZE,
     });

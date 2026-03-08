@@ -147,10 +147,35 @@ async function main(): Promise<void> {
 
   DatabaseClient.initialize(config.database);
   const db = DatabaseClient.getInstance();
-  await db.testConnection();
 
-  const migrationRunner = new MigrationRunner();
-  await migrationRunner.run();
+  const dbMaxRetries = parseInt(process.env.DB_CONNECT_RETRIES ?? '10', 10) || 10;
+  const dbRetryDelayMs = parseInt(process.env.DB_CONNECT_RETRY_DELAY_MS ?? '3000', 10) || 3000;
+
+  for (let attempt = 1; attempt <= dbMaxRetries; attempt++) {
+    const ok = await db.testConnection();
+    if (ok) {
+      try {
+        const migrationRunner = new MigrationRunner();
+        await migrationRunner.run();
+        break;
+      } catch (migrationErr) {
+        const msg = migrationErr instanceof Error ? migrationErr.message : String(migrationErr);
+        logger.warn(`Migration attempt ${attempt}/${dbMaxRetries} failed`, { error: msg });
+        if (attempt === dbMaxRetries) throw migrationErr;
+      }
+    } else {
+      logger.warn(`Database attempt ${attempt}/${dbMaxRetries} failed. Aguardando ${dbRetryDelayMs}ms...`, {
+        host: config.database.host,
+        hint: config.database.host?.includes('railway.internal')
+          ? 'mysql.railway.internal só resolve na rede Railway. Use MYSQL_HOST com URL pública se rodando fora.'
+          : undefined,
+      });
+      if (attempt === dbMaxRetries) {
+        throw new Error(`Database failed after ${dbMaxRetries} attempts. MYSQL_HOST=${config.database.host}`);
+      }
+    }
+    await new Promise((r) => setTimeout(r, dbRetryDelayMs));
+  }
 
   RedisClient.initialize(config.redis);
 
