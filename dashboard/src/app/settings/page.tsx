@@ -51,7 +51,7 @@ export default function SettingsPage() {
     if (res.ok) {
       setMsg({ type: 'ok', text: 'Perfil atualizado' });
       setProfile((p) => ({ ...p, password: '' }));
-      updateSession();
+      await updateSession({ user: { walletAddress: profile.walletAddress, displayName: profile.displayName } });
     } else {
       const data = await res.json();
       setMsg({ type: 'err', text: data.error ?? 'Erro ao salvar' });
@@ -106,8 +106,11 @@ export default function SettingsPage() {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-400">
-                Wallet Address
+                Wallet Address (Phantom)
               </label>
+              <p className="mb-1.5 text-[11px] text-slate-500">
+                O saldo no header vem desta wallet. Cole o endereço da sua Phantom.
+              </p>
               <input
                 type="text"
                 value={profile.walletAddress}

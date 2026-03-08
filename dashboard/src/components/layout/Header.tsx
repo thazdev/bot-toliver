@@ -32,7 +32,7 @@ export function Header() {
         </span>
       </div>
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-slate-400">
+        <div className="flex items-center gap-2 text-sm text-slate-400" title={session?.user?.walletAddress ? `Wallet: ${session.user.walletAddress}` : undefined}>
           <Wallet className="h-4 w-4" />
           <span className="font-medium text-slate-200">
             {balance?.sol?.toFixed(4) ?? '—'} SOL
