@@ -205,21 +205,25 @@ async function main(): Promise<void> {
 
   let lastTokenScanDiagAt = 0;
   let lastBotDisabledLogAt = 0;
+  let tokensIgnored = 0;
+  let tokensPoolNotFound = 0;
+  let tokensInPipeline = 0;
+  let lastPipelineSummaryAt = 0;
+
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
-    if (!(await isBotEnabled())) {
-      if (Date.now() - lastBotDisabledLogAt > 60_000) {
-        lastBotDisabledLogAt = Date.now();
-        logger.info('TOKEN_SCAN: bot desligado no dashboard — jobs ignorados');
+    try {
+      if (!(await isBotEnabled())) {
+        if (Date.now() - lastBotDisabledLogAt > 60_000) {
+          lastBotDisabledLogAt = Date.now();
+          logger.info('TOKEN_SCAN: bot desligado no dashboard — jobs ignorados');
+        }
+        return;
       }
-      return;
-    }
-    BotHealthMonitor.recordEvent();
-    const payload = job.data as TokenScanJobPayload;
-    const { tokenInfo, skipReason } = await tokenScanner.processToken(payload);
-    if (!tokenInfo) {
-      const now = Date.now();
-      if (now - lastTokenScanDiagAt > 30_000) {
-        lastTokenScanDiagAt = now;
+      BotHealthMonitor.recordEvent();
+      const payload = job.data as TokenScanJobPayload;
+      const { tokenInfo, skipReason } = await tokenScanner.processToken(payload);
+      if (!tokenInfo) {
+        tokensIgnored++;
         const reasonMsg = skipReason === 'cache' ? 'já em cache (duplicado)'
           : skipReason === 'no_mint' ? 'mint vazio no payload'
           : skipReason === 'account_not_found' ? 'conta mint não encontrada na chain'
@@ -230,27 +234,39 @@ async function main(): Promise<void> {
           mint: payload.tokenInfo.mintAddress?.slice(0, 12) ?? 'vazio',
           source: payload.source,
         });
+        return;
       }
-      return;
-    }
-    statsTracker.incrementTokensScanned();
-    const poolAddress = payload.tokenInfo.poolAddress?.trim();
-    const pool = await poolScanner.scanForPool(tokenInfo.mintAddress, poolAddress
-      ? { poolAddress, dex: payload.tokenInfo.poolDex ?? 'pumpfun' }
-      : undefined);
-    if (!pool) {
-      const now = Date.now();
-      if (now - lastTokenScanDiagAt > 30_000) {
-        lastTokenScanDiagAt = now;
+      statsTracker.incrementTokensScanned();
+      const poolAddress = payload.tokenInfo.poolAddress?.trim();
+      logger.info('TOKEN_SCAN: token ok, buscando pool', { mint: tokenInfo.mintAddress.slice(0, 12) });
+      const pool = await poolScanner.scanForPool(tokenInfo.mintAddress, poolAddress
+        ? { poolAddress, dex: payload.tokenInfo.poolDex ?? 'pumpfun' }
+        : undefined);
+      logger.info('TOKEN_SCAN: pool scan concluído', {
+        mint: tokenInfo.mintAddress.slice(0, 12),
+        poolEncontrado: !!pool,
+      });
+      if (!pool) {
+        tokensPoolNotFound++;
         logger.info('TOKEN_SCAN: pool não encontrado', {
           mint: tokenInfo.mintAddress.slice(0, 12),
           poolAddress: poolAddress?.slice(0, 12),
         });
+        return;
       }
-      return;
-    }
 
-    logger.info('TOKEN_SCAN: token no pipeline', {
+      tokensInPipeline++;
+      const now = Date.now();
+      if (now - lastPipelineSummaryAt > 30_000) {
+        lastPipelineSummaryAt = now;
+        logger.info('TOKEN_SCAN: resumo pipeline', {
+          ignorados: tokensIgnored,
+          poolNaoEncontrado: tokensPoolNotFound,
+          noPipeline: tokensInPipeline,
+        });
+      }
+
+      logger.info('TOKEN_SCAN: token no pipeline', {
       mint: tokenInfo.mintAddress.slice(0, 12),
       liquidity: pool.liquidity.toFixed(2),
       source: payload.source,
@@ -477,6 +493,11 @@ async function main(): Promise<void> {
             bestConfidence: buySignal?.confidence ?? 0,
           });
         }
+    }
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const errStack = error instanceof Error ? error.stack : undefined;
+      logger.error('TOKEN_SCAN: erro não tratado', { error: errMsg, stack: errStack });
     }
   }, 3);
 
