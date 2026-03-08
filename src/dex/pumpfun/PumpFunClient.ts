@@ -76,6 +76,37 @@ export class PumpFunClient extends BaseDex {
   }
 
   /**
+   * Fetches pool info by pool/bonding curve address (getAccountInfo = 1 crédito vs getProgramAccounts = 10).
+   */
+  async getPoolByAddress(poolAddress: string): Promise<PoolInfo | null> {
+    try {
+      const rateLimiter = this.connectionManager.getRateLimiter();
+      const connection = this.connectionManager.getConnection();
+      const accountInfo = await rateLimiter.schedule(() =>
+        connection.getAccountInfo(new PublicKey(poolAddress)),
+      );
+      if (!accountInfo) return null;
+      const state = PumpFunParser.parse(accountInfo.data as Buffer);
+      if (!state) return null;
+      const price = PumpFunParser.calculatePrice(state);
+      const liquidity = Number(state.virtualSolReserves) / 1_000_000_000;
+      return {
+        poolAddress,
+        tokenMint: state.tokenMint || '',
+        quoteMint: WSOL_MINT,
+        dex: 'pumpfun',
+        liquidity,
+        price,
+        volume24h: 0,
+        createdAt: new Date(),
+        isActive: !state.complete,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Fetches the current price of a token from the bonding curve.
    * @param mintAddress - The token mint address
    * @returns Price in SOL

@@ -18,10 +18,10 @@ export function Header() {
     '/api/wallet/balance',
     fetcher,
     {
-      refreshInterval: 30_000,
+      refreshInterval: 60_000,
       revalidateOnFocus: false,
-      errorRetryCount: 3,
-      dedupingInterval: 10_000,
+      errorRetryCount: 2,
+      dedupingInterval: 30_000,
     },
   );
 

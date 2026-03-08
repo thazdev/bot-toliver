@@ -19,14 +19,30 @@ export class PoolScanner {
 
   /**
    * Scans all registered DEXes for a pool containing the given mint.
+   * Quando poolAddress é fornecido, usa getAccountInfo (1 crédito) em vez de getProgramAccounts (10 créditos).
    * @param mintAddress - The token mint address to search for
+   * @param knownPool - Optional { poolAddress, dex } from logs — evita getProgramAccounts
    * @returns PoolInfo or null if no pool found
    */
-  async scanForPool(mintAddress: string): Promise<PoolInfo | null> {
+  async scanForPool(mintAddress: string, knownPool?: { poolAddress: string; dex: 'pumpfun' | 'raydium' }): Promise<PoolInfo | null> {
     const cacheKey = CacheService.buildKey('pool', mintAddress);
     const cached = await this.cacheService.get<PoolInfo>(cacheKey);
     if (cached) {
       return cached;
+    }
+
+    if (knownPool?.poolAddress && knownPool.poolAddress.length >= 32) {
+      const dex = this.dexClients.find((d) => (d as { name: string }).name.toLowerCase().includes(knownPool.dex));
+      if (dex) {
+        try {
+          const pool = await dex.getPoolByAddress(knownPool.poolAddress);
+          if (pool) {
+            await this.cacheService.set(cacheKey, pool, POOL_CACHE_TTL_SECONDS);
+            logger.info('PoolScanner: pool from logs (getAccountInfo)', { mintAddress, dex: knownPool.dex });
+            return pool;
+          }
+        } catch {}
+      }
     }
 
     for (const dex of this.dexClients) {

@@ -40,14 +40,22 @@ export abstract class BaseListener {
       switch (event.type) {
         case 'TOKEN_DETECTED':
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'token-detected', {
-            tokenInfo: event.data,
+            tokenInfo: {
+              ...event.data,
+              poolAddress: event.data.poolAddress || undefined,
+              poolDex: event.data.dex === 'pumpfun' ? 'pumpfun' : 'raydium',
+            },
             source: this.name,
             detectedAt: event.timestamp,
           } satisfies TokenScanJobPayload);
           break;
         case 'POOL_CREATED':
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'pool-created', {
-            tokenInfo: { mintAddress: event.data.tokenMint },
+            tokenInfo: {
+              mintAddress: event.data.tokenMint,
+              poolAddress: event.data.poolAddress || undefined,
+              poolDex: event.data.dex === 'pumpfun' ? 'pumpfun' : 'raydium',
+            },
             source: this.name,
             detectedAt: event.timestamp,
           } satisfies TokenScanJobPayload);

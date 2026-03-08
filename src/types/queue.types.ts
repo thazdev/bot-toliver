@@ -10,7 +10,7 @@ export enum QueueName {
 }
 
 export interface TokenScanJobPayload {
-  tokenInfo: Partial<TokenInfo>;
+  tokenInfo: Partial<TokenInfo> & { poolAddress?: string; poolDex?: 'pumpfun' | 'raydium' };
   source: string;
   detectedAt: number;
   txSignature?: string;

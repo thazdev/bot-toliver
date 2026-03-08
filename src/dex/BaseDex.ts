@@ -15,6 +15,11 @@ export abstract class BaseDex {
    */
   abstract getPool(mintAddress: string): Promise<PoolInfo | null>;
 
+  /** Fetches pool by address (getAccountInfo = 1 crédito). Override in subclasses. */
+  async getPoolByAddress(_poolAddress: string): Promise<PoolInfo | null> {
+    return null;
+  }
+
   /**
    * Fetches the current price of a token in SOL.
    * @param mintAddress - The token mint address

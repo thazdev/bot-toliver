@@ -76,6 +76,23 @@ export class RaydiumClient extends BaseDex {
   }
 
   /**
+   * Fetches pool info by pool address (getAccountInfo = 1 crédito vs getProgramAccounts = 10).
+   */
+  async getPoolByAddress(poolAddress: string): Promise<PoolInfo | null> {
+    try {
+      const rateLimiter = this.connectionManager.getRateLimiter();
+      const connection = this.connectionManager.getConnection();
+      const accountInfo = await rateLimiter.schedule(() =>
+        connection.getAccountInfo(new PublicKey(poolAddress)),
+      );
+      if (!accountInfo) return null;
+      return this.parsePoolAccount(poolAddress, accountInfo.data as Buffer);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Fetches the current price of a token in SOL from Raydium pool reserves.
    * @param mintAddress - The token mint address
    * @returns Price in SOL

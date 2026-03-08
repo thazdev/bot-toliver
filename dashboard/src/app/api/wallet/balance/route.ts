@@ -4,7 +4,9 @@ import { prisma } from '@/lib/prisma';
 import { dashboardConfig } from '@/config/dashboard.config';
 import { requireAuth } from '@/lib/auth-guard';
 
-const CACHE_TTL = 60;
+const CACHE_TTL = 300;
+const RATE_LIMIT_COOLDOWN_KEY = 'dashboard:wallet_balance:rate_limited';
+const RATE_LIMIT_COOLDOWN_SEC = 300;
 
 export async function GET(req: NextRequest) {
   const { session, error } = await requireAuth();
@@ -42,6 +44,17 @@ export async function GET(req: NextRequest) {
   if (!skipCache) {
     try {
       await redis.connect().catch(() => {});
+      const cooldown = await redis.get(RATE_LIMIT_COOLDOWN_KEY);
+      if (cooldown) {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          return NextResponse.json(JSON.parse(cached));
+        }
+        return NextResponse.json(
+          { sol: 0, usd: null },
+          { headers: { 'Cache-Control': 'private, max-age=60' } },
+        );
+      }
       const cached = await redis.get(cacheKey);
       if (cached) {
         return NextResponse.json(JSON.parse(cached));
@@ -76,11 +89,18 @@ export async function GET(req: NextRequest) {
       if (isRateLimit) {
         try {
           await redis.connect().catch(() => {});
+          await redis.setex(RATE_LIMIT_COOLDOWN_KEY, RATE_LIMIT_COOLDOWN_SEC, '1');
           const cached = await redis.get(cacheKey);
           if (cached) {
-            return NextResponse.json(JSON.parse(cached));
+            return NextResponse.json(JSON.parse(cached), {
+              headers: { 'Cache-Control': 'private, max-age=120' },
+            });
           }
         } catch {}
+        return NextResponse.json(
+          { sol: 0, usd: null },
+          { status: 200, headers: { 'Cache-Control': 'private, max-age=120' } },
+        );
       }
       return NextResponse.json(
         { sol: 0, usd: null, error: `RPC falhou: ${rpcError}` },

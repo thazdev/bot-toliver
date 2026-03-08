@@ -199,7 +199,10 @@ async function main(): Promise<void> {
     const tokenInfo = await tokenScanner.processToken(payload);
     if (tokenInfo) {
       statsTracker.incrementTokensScanned();
-      const pool = await poolScanner.scanForPool(tokenInfo.mintAddress);
+      const poolAddress = payload.tokenInfo.poolAddress?.trim();
+      const pool = await poolScanner.scanForPool(tokenInfo.mintAddress, poolAddress
+        ? { poolAddress, dex: payload.tokenInfo.poolDex ?? 'pumpfun' }
+        : undefined);
       if (pool) {
         const tokenAgeSec = (Date.now() - tokenInfo.createdAt.getTime()) / 1000;
         const defaultHolderData: HolderData = {

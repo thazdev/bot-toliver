@@ -204,28 +204,29 @@ export class LogsListener extends BaseListener {
         });
       }
 
-      this.onEvent({
-        type: 'POOL_CREATED',
-        timestamp: blockTime * 1000,
-        data: {
-          poolAddress: discovered.poolAddress ?? '',
-          tokenMint: discovered.tokenMint ?? '',
-          quoteMint: '',
-          dex: source === 'pumpfun' ? 'pumpfun' : 'raydium',
-          liquidity: discovered.initialLiquiditySOL ?? 0,
-          price: 0,
-          volume24h: 0,
-          createdAt: new Date(blockTime * 1000),
-          isActive: true,
-        },
-      });
-
-      if (discovered.tokenMint) {
+      const poolAddress = discovered.poolAddress ?? '';
+      const tokenMint = discovered.tokenMint ?? '';
+      const dex = source === 'pumpfun' ? 'pumpfun' : 'raydium';
+      const poolData = {
+        poolAddress,
+        tokenMint,
+        quoteMint: '',
+        dex,
+        liquidity: discovered.initialLiquiditySOL ?? 0,
+        price: 0,
+        volume24h: 0,
+        createdAt: new Date(blockTime * 1000),
+        isActive: true,
+      };
+      this.onEvent({ type: 'POOL_CREATED', timestamp: blockTime * 1000, data: poolData });
+      if (tokenMint) {
         this.onEvent({
           type: 'TOKEN_DETECTED',
           timestamp: blockTime * 1000,
           data: {
-            mintAddress: discovered.tokenMint,
+            mintAddress: tokenMint,
+            poolAddress: poolAddress || undefined,
+            dex,
             symbol: '',
             name: '',
             decimals: 0,
