@@ -122,7 +122,10 @@ export class RiskManager {
     }
 
     const totalCapital = this.config.trading.totalCapitalSol;
-    const maxSinglePosition = totalCapital * (riskCfg.maxSingleTokenExposurePercent / 100);
+    const maxSingleTokenPct = process.env.MAX_SINGLE_TOKEN_EXPOSURE_PERCENT
+      ? parseFloat(process.env.MAX_SINGLE_TOKEN_EXPOSURE_PERCENT)
+      : riskCfg.maxSingleTokenExposurePercent;
+    const maxSinglePosition = totalCapital * (maxSingleTokenPct / 100);
     const effectiveSize = tradeRequest.amountSol * this.newPositionSizeMultiplier;
     if (effectiveSize > maxSinglePosition) {
       const availableCapital = this.exposureTracker.getAvailableCapital();
@@ -131,12 +134,12 @@ export class RiskManager {
         limit: maxSinglePosition,
         limitType: 'maxSingleTokenExposurePercent',
         totalCapitalSol: totalCapital,
-        maxSingleTokenExposurePercent: riskCfg.maxSingleTokenExposurePercent,
+        maxSingleTokenExposurePercent: maxSingleTokenPct,
         availableCapital,
         isDryRun: this.config.bot.dryRun,
         tokenMint: tradeRequest.tokenMint.slice(0, 12),
       });
-      return { approved: false, reason: `Position size ${effectiveSize.toFixed(4)} SOL exceeds single token max ${maxSinglePosition.toFixed(4)} SOL (${riskCfg.maxSingleTokenExposurePercent}%)` };
+      return { approved: false, reason: `Position size ${effectiveSize.toFixed(4)} SOL exceeds single token max ${maxSinglePosition.toFixed(4)} SOL (${maxSingleTokenPct}%)` };
     }
 
     const availableCapital = this.exposureTracker.getAvailableCapital();
