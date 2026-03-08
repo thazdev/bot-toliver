@@ -4,6 +4,9 @@ import { getTierConfig, CONSECUTIVE_LOSS_RULES, type TierConfig } from '../strat
 import type { AppConfig } from '../types/config.types.js';
 import type { StrategyTier } from '../types/strategy.types.js';
 
+/** Mínimo absoluto por trade — abaixo disso fees destroem o lucro (~6.6% round trip). */
+export const MINIMUM_TRADE_SIZE_SOL = 0.009;
+
 interface TradeHistory {
   winRate: number;
   avgWinPercent: number;
@@ -29,6 +32,9 @@ export class PositionSizer {
   private static readonly DEFAULT_AVG_WIN = 2.0;
   private static readonly DEFAULT_AVG_LOSS = 0.8;
 
+  /** Base = 2% do capital (ex: 0.9 SOL → 0.018 SOL). */
+  private static readonly BASE_POSITION_PERCENT = 2;
+
   constructor(config: AppConfig, exposureTracker: ExposureTracker) {
     this.maxPositionSizeSol = config.trading.maxPositionSizeSol;
     this.totalCapitalSol = config.trading.totalCapitalSol;
@@ -50,54 +56,52 @@ export class PositionSizer {
     const entryScore = clampedConfidence * 100;
     const cfg = this.tierConfig.sizing;
 
-    let baseSizeSol: number;
-    if (tradeHistory && tradeHistory.totalTrades >= PositionSizer.MIN_TRADES_FOR_KELLY) {
-      baseSizeSol = this.kellySize(tradeHistory);
-    } else {
-      baseSizeSol = this.fixedFractionSize();
-    }
+    // Base = 2% do capital real (ex: 0.9 SOL → 0.018 SOL)
+    const baseSize = this.totalCapitalSol * (PositionSizer.BASE_POSITION_PERCENT / 100);
 
-    if (entryScore >= cfg.highConvictionThreshold) {
-      baseSizeSol *= cfg.highConvictionMultiplier;
-    } else if (entryScore < 60 && entryScore >= cfg.lowConvictionMinScore) {
-      baseSizeSol *= cfg.lowConvictionMultiplier;
-    }
+    // Multiplicador por confiança: score alto 1.5x, médio 1x, baixo 0.5x
+    const confidenceMultiplier =
+      entryScore >= cfg.highConvictionThreshold
+        ? cfg.highConvictionMultiplier
+        : entryScore >= 70
+          ? 1.0
+          : cfg.lowConvictionMultiplier;
 
-    if (atrPercent !== undefined && atrPercent > 0) {
-      baseSizeSol = this.volatilityAdjust(baseSizeSol, atrPercent);
-    }
-
-    baseSizeSol *= this.sizeMultiplier;
-
-    baseSizeSol = Math.max(cfg.minPositionSol, baseSizeSol);
-    baseSizeSol = Math.min(
+    let calculatedSize = baseSize * confidenceMultiplier;
+    calculatedSize = Math.min(
+      calculatedSize,
       this.maxPositionSizeSol,
       this.totalCapitalSol * (cfg.maxSinglePositionPercent / 100),
-      baseSizeSol,
     );
 
-    const available = this.exposureTracker.getAvailableCapital();
-    if (baseSizeSol > available) {
-      baseSizeSol = available;
+    if (atrPercent !== undefined && atrPercent > 0) {
+      calculatedSize = this.volatilityAdjust(calculatedSize, atrPercent);
     }
 
-    if (baseSizeSol < cfg.minPositionSol) {
-      logger.debug('PositionSizer: size below minimum after adjustments', {
-        calculatedSize: baseSizeSol,
-        minSize: cfg.minPositionSol,
+    let finalSize = calculatedSize * this.sizeMultiplier;
+
+    const available = this.exposureTracker.getAvailableCapital();
+    finalSize = Math.min(finalSize, available);
+
+    // Nunca abrir trade abaixo do mínimo viável (fees ~6.6%)
+    if (finalSize < MINIMUM_TRADE_SIZE_SOL) {
+      logger.debug('PositionSizer: size below minimum viable', {
+        calculatedSize: finalSize,
+        minViable: MINIMUM_TRADE_SIZE_SOL,
       });
       return 0;
     }
 
     logger.debug('PositionSizer: size calculated', {
       confidence: clampedConfidence,
-      baseSizeSol,
+      baseSize,
+      confidenceMultiplier,
+      finalSize,
       sizeMultiplier: this.sizeMultiplier,
       consecutiveLosses: this.consecutiveLosses,
-      kellyMode: tradeHistory !== undefined && tradeHistory.totalTrades >= PositionSizer.MIN_TRADES_FOR_KELLY,
     });
 
-    return Math.round(baseSizeSol * 1_000_000_000) / 1_000_000_000;
+    return Math.round(finalSize * 1_000_000_000) / 1_000_000_000;
   }
 
   private kellySize(history: TradeHistory): number {

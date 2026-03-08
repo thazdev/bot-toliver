@@ -49,12 +49,13 @@ import { StopLossManager } from './strategies/StopLossManager.js';
 import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
 import { getTierConfig, shouldRelaxFiltersForDryRun } from './strategies/config.js';
 import { getEffectiveDryRun } from './config/DryRunResolver.js';
+import { getOpenPositionsTotalSOL } from './services/DryRunPositionService.js';
 import { isBotEnabled, isBotEnabledNoCache } from './config/BotEnabledResolver.js';
 import { setConnectionsPaused } from './config/ConnectionsPausedResolver.js';
 import { AlertService } from './alerts/AlertService.js';
 import { StatsTracker } from './stats/StatsTracker.js';
 import { StatsSnapshot } from './stats/StatsSnapshot.js';
-import { PositionSizer } from './capital/PositionSizer.js';
+import { PositionSizer, MINIMUM_TRADE_SIZE_SOL } from './capital/PositionSizer.js';
 import { RugDetector } from './analysis/RugDetector.js';
 import { ScamDetector } from './analysis/ScamDetector.js';
 import { LiquidityAnalyzer } from './analysis/LiquidityAnalyzer.js';
@@ -67,6 +68,7 @@ import { MarketSentiment } from './analysis/MarketSentiment.js';
 import { TradingGuard } from './risk/TradingGuard.js';
 import { TrailingStopStrategy } from './strategies/TrailingStopStrategy.js';
 import { TradeFilterPipeline } from './strategies/TradeFilterPipeline.js';
+import { startDryRunPositionMonitor } from './workers/DryRunPositionMonitor.js';
 import { ExitDecisionEngine } from './trading/ExitDecisionEngine.js';
 import { TransactionManager } from './trading/TransactionManager.js';
 import { StateReconciler } from './trading/StateReconciler.js';
@@ -221,7 +223,7 @@ async function main(): Promise<void> {
     config,
     (tokenMint: string) => tradingGuard.recordTokenFailure(tokenMint),
   );
-  const tradeExecutor = new TradeExecutor(config, queueManager, transactionManager);
+  const tradeExecutor = new TradeExecutor(config, queueManager, transactionManager, poolScanner);
 
   const positionTracker = new PositionTracker(positionManager, priceMonitor, queueManager, config);
   const strategyRegistry = new StrategyRegistry();
@@ -650,10 +652,18 @@ async function main(): Promise<void> {
         }
 
         if (buySignal && buySignal.confidence > 0) {
+          const dryRun = await getEffectiveDryRun(config);
+          // Atualizar exposure com posições dry run abertas (capital em uso)
+          if (dryRun) {
+            const dryRunExposure = await getOpenPositionsTotalSOL();
+            const realExposure = positionManager.getOpenPositions().reduce((s, p) => s + p.amountSol, 0);
+            exposureTracker.setExposure(realExposure + dryRunExposure);
+          }
+
           const sizeSol = positionSizer.calculatePositionSize(buySignal.confidence);
           const baseSize = sizeSol > 0 ? sizeSol : buySignal.suggestedSizeSol;
           const finalSize = baseSize * guardStatus.positionSizeMultiplier;
-          const minSize = getTierConfig(config.trading.strategyTier).sizing.minPositionSol;
+          const minSize = dryRun ? MINIMUM_TRADE_SIZE_SOL : getTierConfig(config.trading.strategyTier).sizing.minPositionSol;
 
           if (isDebugToken) {
             logger.info('DEBUG_TRACE: POSITION_SIZE', {
@@ -663,8 +673,6 @@ async function main(): Promise<void> {
               blocked: sizeSol < minSize,
             });
           }
-
-          const dryRun = await getEffectiveDryRun(config);
 
           const riskCheck = await riskManager.preTradeCheck({
             tokenMint: tokenInfo.mintAddress,
@@ -1057,6 +1065,8 @@ async function main(): Promise<void> {
   }
 
   positionTracker.start();
+
+  startDryRunPositionMonitor();
 
   statsSnapshot = new StatsSnapshot(statsTracker);
   statsSnapshot.start();

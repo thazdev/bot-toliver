@@ -12,6 +12,12 @@ import type { TransactionContext } from '../trading/TransactionManager.js';
 import type { TradeRequest, TradeResult } from '../types/trade.types.js';
 import type { AppConfig } from '../types/config.types.js';
 import type { AlertJobPayload } from '../types/queue.types.js';
+import { getRealEntryPrice } from '../services/JupiterPriceService.js';
+import {
+  saveDryRunPosition,
+  type DryRunPosition,
+} from '../services/DryRunPositionService.js';
+import type { PoolScanner } from '../scanners/PoolScanner.js';
 
 const BUY_LOCK_TTL_SEC = parseInt(process.env.BUY_LOCK_TTL_SEC ?? '30', 10);
 
@@ -28,9 +34,16 @@ export class TradeExecutor {
   private queueManager: QueueManager;
   private transactionManager: TransactionManager;
   private config: AppConfig;
+  private poolScanner: PoolScanner | null;
 
-  constructor(config: AppConfig, queueManager: QueueManager, transactionManager: TransactionManager) {
+  constructor(
+    config: AppConfig,
+    queueManager: QueueManager,
+    transactionManager: TransactionManager,
+    poolScanner?: PoolScanner | null,
+  ) {
     this.config = config;
+    this.poolScanner = poolScanner ?? null;
     this.jupiterClient = new JupiterClient(config);
     this.slippageManager = new SlippageManager(config);
     this.tradeRepository = new TradeRepository();
@@ -92,10 +105,27 @@ export class TradeExecutor {
     const envDryRun = process.env.DRY_RUN === 'true' || process.env.BOT_DRY_RUN === 'true';
     if (tradeRequest.dryRun || envDryRun) {
       const entryScore = tradeRequest.entryScore ?? 0;
-      logger.info('DRY_RUN_INTERCEPTED', {
+      const finalSize = tradeRequest.amountSol;
+
+      // Preço real: Jupiter Price API primeiro, fallback para pool
+      let entryPrice = await getRealEntryPrice(tradeRequest.tokenMint);
+      let priceSource = 'jupiter';
+      if (entryPrice == null && this.poolScanner) {
+        const pool = await this.poolScanner.scanForPool(tradeRequest.tokenMint);
+        entryPrice = pool?.price ?? null;
+        priceSource = 'pool_estimate';
+      }
+      if (entryPrice == null || entryPrice <= 0) {
+        entryPrice = 0.001; // fallback mínimo para evitar divisão por zero
+        priceSource = 'fallback';
+      }
+
+      logger.info('DRY_RUN_ENTRY_PRICE', {
         tokenMint: tradeRequest.tokenMint,
-        amountSOL: tradeRequest.amountSol,
-        entryScore,
+        entryPrice,
+        amountSOL: finalSize,
+        estimatedTokens: finalSize / entryPrice,
+        priceSource,
       });
 
       try {
@@ -103,17 +133,15 @@ export class TradeExecutor {
         if (debugToken && tradeRequest.tokenMint === debugToken) {
           logger.info('DEBUG_TRACE: DRY_RUN_INTERCEPTED', {
             tokenMint: tradeRequest.tokenMint.slice(0, 12),
-            wouldBuy: tradeRequest.amountSol,
+            wouldBuy: finalSize,
           });
         }
       } catch (_) {}
 
-      // DRY RUN: simular quote sem chamar Jupiter (tokens novos podem não estar indexados)
-      const amountLamports = solToLamports(tradeRequest.amountSol).toNumber();
-      const amountSol = tradeRequest.amountSol;
+      // DRY RUN: simular quote sem chamar Jupiter (valores compatíveis com DB)
+      const amountLamports = solToLamports(finalSize).toNumber();
+      const amountSol = finalSize;
       const simulatedSlippage = 0.03;
-      // Garantir valores válidos para price_sol (DECIMAL 18,12): outputAmount/inputAmount deve ser < 1e6
-      // Simulamos ~1000 tokens por SOL para manter ratio dentro do range
       const tokensPerSol = 1000;
       const quote =
         tradeRequest.direction === 'buy'
@@ -137,7 +165,8 @@ export class TradeExecutor {
       logger.info('🔵 DRY RUN TRADE — would have executed (quote simulated)', {
         direction: tradeRequest.direction,
         tokenMint: tradeRequest.tokenMint,
-        amountSOL: tradeRequest.amountSol,
+        amountSOL: finalSize,
+        entryPrice,
         reason: 'dry_run_simulated',
       });
 
@@ -150,7 +179,33 @@ export class TradeExecutor {
       );
       await this.tradeRepository.insert(result);
 
-      // Publicar no Redis para o dashboard mostrar em tempo real
+      // Salvar posição completa no Redis para monitoramento
+      if (tradeRequest.direction === 'buy') {
+        const dryRunPosition: DryRunPosition = {
+          id: `dry_${Date.now()}`,
+          tokenMint: tradeRequest.tokenMint,
+          entryPrice,
+          entryTime: new Date().toISOString(),
+          amountSOL: finalSize,
+          amountTokens: finalSize / entryPrice,
+          entryScore,
+          strategy: tradeRequest.strategyId,
+          tier: this.config.trading.strategyTier,
+          stopLossPrice: entryPrice * 0.85,
+          tp1Price: entryPrice * 1.5,
+          tp2Price: entryPrice * 2.0,
+          tp3Price: entryPrice * 2.5,
+          trailingStopPrice: null,
+          peakPrice: entryPrice,
+          currentPrice: entryPrice,
+          currentPnlPct: 0,
+          currentPnlSOL: 0,
+          status: 'open',
+        };
+        await saveDryRunPosition(dryRunPosition);
+      }
+
+      // Publicar no Redis para o dashboard
       try {
         const redis = RedisClient.getInstance().getClient();
         await redis.publish(
@@ -158,12 +213,12 @@ export class TradeExecutor {
           JSON.stringify({
             type: 'DRY_RUN_TRADE',
             tokenMint: tradeRequest.tokenMint,
-            amountSOL: tradeRequest.amountSol,
+            amountSOL: finalSize,
             entryScore,
+            entryPrice,
             timestamp: new Date().toISOString(),
           }),
         );
-        // Atualizar tradeExecuted no log de passed tokens
         const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
         const updated = rawList.map((s) => {
           try {
