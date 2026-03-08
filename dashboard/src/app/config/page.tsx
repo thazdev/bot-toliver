@@ -18,15 +18,6 @@ import { DashboardShell } from '@/components/layout/DashboardShell';
 import { fetcher } from '@/lib/fetcher';
 import type { BotHealth } from '@/types';
 
-interface TradingConfig {
-  stop_loss?: number;
-  take_profit?: number;
-  max_position_size?: number;
-  max_open_positions?: number;
-  slippage_bps?: number;
-  [key: string]: unknown;
-}
-
 interface BotConfig {
   version?: string;
   [key: string]: unknown;
@@ -52,14 +43,6 @@ function formatRelativeTime(iso: string | null) {
   return `${hrs}h ${mins % 60}m atrás`;
 }
 
-const CONFIG_FIELDS = [
-  { key: 'stop_loss', label: 'Stop Loss %', step: 1, min: 1, max: 100 },
-  { key: 'take_profit', label: 'Take Profit %', step: 1, min: 1, max: 1000 },
-  { key: 'max_position_size', label: 'Max Position Size (SOL)', step: 0.01, min: 0.01, max: 100 },
-  { key: 'max_open_positions', label: 'Max Open Positions', step: 1, min: 1, max: 50 },
-  { key: 'slippage_bps', label: 'Slippage (BPS)', step: 10, min: 10, max: 5000 },
-] as const;
-
 export default function ConfigPage() {
   const { data: health, mutate: mutateHealth } = useSWR<BotHealth>(
     '/api/health',
@@ -73,20 +56,12 @@ export default function ConfigPage() {
     { refreshInterval: 10_000 },
   );
 
-  const { data: tradingConfig, mutate: mutateConfig } = useSWR<TradingConfig>(
-    '/api/config',
-    fetcher,
-    { refreshInterval: 10_000 },
-  );
-
   const [togglingMode, setTogglingMode] = useState(false);
   const [confirmReal, setConfirmReal] = useState(false);
   const [stoppingBot, setStoppingBot] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [startingBot, setStartingBot] = useState(false);
 
-  const [editValues, setEditValues] = useState<Record<string, string>>({});
-  const [savingField, setSavingField] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
 
   const currentMode = health?.mode ?? 'dry-run';
@@ -162,45 +137,6 @@ export default function ConfigPage() {
     } finally {
       setStartingBot(false);
     }
-  }
-
-  async function handleSaveField(key: string) {
-    const raw = editValues[key];
-    if (raw === undefined || raw === '') return;
-
-    const value = Number(raw);
-    if (isNaN(value)) {
-      showToast('error', 'Valor inválido');
-      return;
-    }
-
-    setSavingField(key);
-    try {
-      const res = await fetch('/api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, value }),
-      });
-      if (!res.ok) throw new Error('Falha ao salvar');
-      await mutateConfig();
-      setEditValues((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-      showToast('success', `${key} atualizado`);
-    } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Erro ao salvar');
-    } finally {
-      setSavingField(null);
-    }
-  }
-
-  function getFieldValue(key: string): number | string {
-    const val = (tradingConfig as Record<string, unknown>)?.[key];
-    if (typeof val === 'number') return val;
-    if (typeof val === 'string') return val;
-    return '\u2014';
   }
 
   return (
@@ -361,55 +297,6 @@ export default function ConfigPage() {
                 </button>
               )}
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Trading Config */}
-      <section className="mb-6">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">
-          Configuração de Trading
-        </h2>
-        <div className="rounded-2xl border border-card-border bg-card p-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {CONFIG_FIELDS.map((field) => {
-              const currentValue = getFieldValue(field.key);
-              const editValue = editValues[field.key];
-              const isSaving = savingField === field.key;
-              const hasChanged = editValue !== undefined && editValue !== String(currentValue);
-
-              return (
-                <div key={field.key} className="rounded-xl border border-card-border/50 bg-white/[0.02] p-4">
-                  <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-500">
-                    {field.label}
-                  </label>
-                  <p className="mb-2 text-sm text-slate-400">
-                    Atual: <span className="font-mono font-semibold text-white">{currentValue}</span>
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      step={field.step}
-                      min={field.min}
-                      max={field.max}
-                      placeholder={String(currentValue)}
-                      value={editValue ?? ''}
-                      onChange={(e) =>
-                        setEditValues((prev) => ({ ...prev, [field.key]: e.target.value }))
-                      }
-                      className="flex-1 rounded-lg border border-card-border bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-600 outline-none focus:border-indigo-500"
-                    />
-                    <button
-                      onClick={() => handleSaveField(field.key)}
-                      disabled={!hasChanged || isSaving}
-                      className="rounded-lg border border-indigo-500/30 bg-indigo-500/20 px-4 py-2 text-xs font-semibold text-indigo-400 transition-colors hover:bg-indigo-500/30 disabled:opacity-30"
-                    >
-                      {isSaving ? '...' : 'Salvar'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
       </section>
