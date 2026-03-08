@@ -1,43 +1,37 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { signIn, useSession } from 'next-auth/react';
-import { useSearchParams } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import { Bot, Loader2 } from 'lucide-react';
 
-function LoginForm() {
-  const { data: session, status } = useSession();
-  const searchParams = useSearchParams();
+export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (status === 'authenticated' && session) {
-      window.location.href = '/';
-    }
-  }, [session, status]);
-
-  useEffect(() => {
-    const err = searchParams.get('error');
-    if (err === 'CredentialsSignin') setError('Credenciais inválidas');
-  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    await signIn('credentials', {
+    const res = await signIn('credentials', {
       username,
       password,
-      redirect: true,
-      callbackUrl: '/',
+      redirect: false,
     });
 
     setLoading(false);
+
+    if (res?.error) {
+      setError('Credenciais inválidas');
+      return;
+    }
+
+    if (res?.ok) {
+      window.location.replace('/');
+    }
   }
 
   return (
@@ -91,17 +85,5 @@ function LoginForm() {
         </form>
       </div>
     </div>
-  );
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-slate-400">Carregando…</p>
-      </div>
-    }>
-      <LoginForm />
-    </Suspense>
   );
 }
