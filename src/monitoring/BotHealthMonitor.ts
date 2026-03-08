@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js';
 import { RedisClient } from '../core/cache/RedisClient.js';
 import type { TradingGuard } from '../risk/TradingGuard.js';
 import { getEffectiveDryRun } from '../config/DryRunResolver.js';
+import { isBotEnabled } from '../config/BotEnabledResolver.js';
 import { loadConfig } from '../config/index.js';
 
 const BOT_HEALTH_CHECK_MS = parseInt(process.env.BOT_HEALTH_CHECK_MS ?? '10000', 10);
@@ -93,13 +94,14 @@ export class BotHealthMonitor {
   private async writeDashboardHeartbeat(): Promise<void> {
     try {
       const config = loadConfig();
-      const dryRun = await getEffectiveDryRun(config);
+      const [dryRun, enabled] = await Promise.all([getEffectiveDryRun(config), isBotEnabled()]);
       const redis = RedisClient.getInstance().getClient();
       const startTime = (globalThis as { __botStartTime?: number }).__botStartTime ?? Date.now();
       const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
 
+      const status = !enabled ? 'PAUSED' : dryRun ? 'DRY_RUN' : 'RUNNING';
       const payload = {
-        status: dryRun ? 'DRY_RUN' : 'RUNNING',
+        status,
         lastHeartbeat: new Date().toISOString(),
         timestamp: new Date().toISOString(),
         uptimeSeconds,

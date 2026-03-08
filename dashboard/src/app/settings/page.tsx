@@ -34,6 +34,7 @@ export default function SettingsPage() {
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [resolveNote, setResolveNote] = useState('');
   const [dryRunLoading, setDryRunLoading] = useState(false);
+  const [botEnabledLoading, setBotEnabledLoading] = useState(false);
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -156,6 +157,50 @@ export default function SettingsPage() {
           <h2 className="mb-4 text-sm font-semibold text-slate-300">Bot</h2>
           {botConfig && (
             <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-xl border border-card-border bg-white/[0.02] p-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-200">Bot ativo</p>
+                  <p className="text-xs text-slate-500">
+                    {botConfig.BOT_ENABLED === 'true'
+                      ? 'Processando tokens e fazendo requisições'
+                      : 'Pausado — nenhuma requisição será feita'}
+                  </p>
+                </div>
+                <button
+                  disabled={botEnabledLoading}
+                  onClick={async () => {
+                    setBotEnabledLoading(true);
+                    const next = botConfig.BOT_ENABLED !== 'true';
+                    const res = await fetch('/api/settings/bot-enabled', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ enabled: next }),
+                    });
+                    if (res.ok) await mutateBotConfig();
+                    setBotEnabledLoading(false);
+                  }}
+                  className={clsx(
+                    'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors',
+                    botConfig.BOT_ENABLED === 'true'
+                      ? 'bg-warning/20 text-warning hover:bg-warning/30'
+                      : 'bg-success/20 text-success hover:bg-success/30',
+                  )}
+                >
+                  {botEnabledLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : botConfig.BOT_ENABLED === 'true' ? (
+                    <>
+                      <Pause className="h-4 w-4" />
+                      Desligar
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" />
+                      Ligar
+                    </>
+                  )}
+                </button>
+              </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-slate-200">Modo de operação</p>
@@ -200,7 +245,7 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2.5 border-t border-card-border pt-4">
                 {Object.entries(botConfig)
-                  .filter(([k]) => k !== 'DRY_RUN')
+                  .filter(([k]) => k !== 'DRY_RUN' && k !== 'BOT_ENABLED')
                   .map(([key, val]) => (
                     <div key={key} className="flex items-center justify-between text-xs">
                       <span className="text-slate-500">{key}</span>

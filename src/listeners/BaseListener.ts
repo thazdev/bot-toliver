@@ -3,6 +3,7 @@ import type { BotEvent } from '../types/event.types.js';
 import { QueueManager } from '../core/queue/QueueManager.js';
 import { QueueName } from '../types/queue.types.js';
 import type { TokenScanJobPayload } from '../types/queue.types.js';
+import { isBotEnabled } from '../config/BotEnabledResolver.js';
 
 /**
  * Abstract base class for all Solana event listeners.
@@ -37,6 +38,9 @@ export abstract class BaseListener {
    */
   protected async onEvent(event: BotEvent): Promise<void> {
     try {
+      if (!(await isBotEnabled())) {
+        return;
+      }
       switch (event.type) {
         case 'TOKEN_DETECTED': {
           const d = event.data;

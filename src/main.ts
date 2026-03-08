@@ -48,6 +48,7 @@ import { StopLossManager } from './strategies/StopLossManager.js';
 import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
 import { getTierConfig } from './strategies/config.js';
 import { getEffectiveDryRun } from './config/DryRunResolver.js';
+import { isBotEnabled } from './config/BotEnabledResolver.js';
 import { AlertService } from './alerts/AlertService.js';
 import { StatsTracker } from './stats/StatsTracker.js';
 import { StatsSnapshot } from './stats/StatsSnapshot.js';
@@ -195,6 +196,9 @@ async function main(): Promise<void> {
   });
 
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
+    if (!(await isBotEnabled())) {
+      return;
+    }
     BotHealthMonitor.recordEvent();
     const payload = job.data as TokenScanJobPayload;
     const tokenInfo = await tokenScanner.processToken(payload);

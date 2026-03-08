@@ -50,7 +50,9 @@ export function Header() {
       ? 'status-running'
       : health?.status === 'DRY_RUN'
         ? 'status-dryrun'
-        : 'status-halted';
+        : health?.status === 'PAUSED'
+          ? 'status-halted'
+          : 'status-halted';
 
   const statusLabel = health?.status ?? 'UNKNOWN';
 

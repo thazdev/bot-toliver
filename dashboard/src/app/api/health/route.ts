@@ -22,7 +22,7 @@ export async function GET() {
 
     if (healthRaw) {
       const health = JSON.parse(healthRaw);
-      const status = dryRun ? 'DRY_RUN' : health.status ?? 'RUNNING';
+      const status = health.status ?? (dryRun ? 'DRY_RUN' : 'RUNNING');
       return NextResponse.json({
         status,
         lastHeartbeat: health.lastHeartbeat ?? health.timestamp ?? null,

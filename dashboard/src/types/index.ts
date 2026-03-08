@@ -64,7 +64,7 @@ export interface AnalyticsSummary {
 }
 
 export interface BotHealth {
-  status: 'RUNNING' | 'HALTED' | 'DRY_RUN' | 'UNKNOWN';
+  status: 'RUNNING' | 'HALTED' | 'DRY_RUN' | 'PAUSED' | 'UNKNOWN';
   lastHeartbeat: string | null;
   uptimeSeconds: number;
 }
