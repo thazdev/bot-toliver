@@ -3,11 +3,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { Bot, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -29,7 +27,7 @@ export default function LoginPage() {
     if (res?.error) {
       setError('Credenciais inválidas');
     } else {
-      router.push('/');
+      window.location.href = '/';
     }
   }
 
