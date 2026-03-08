@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
   }
 
   const mints = [...new Set(positions.map((p) => p.tokenMint))];
-  let tokens: Awaited<ReturnType<typeof prisma.token.findMany>>;
+  let tokens: { mintAddress: string; symbol: string }[];
   try {
     tokens = await prisma.token.findMany({
       where: { mintAddress: { in: mints } },
@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
   }
   const symbolMap = Object.fromEntries(tokens.map((t) => [t.mintAddress, t.symbol]));
 
-  let allClosed: Awaited<ReturnType<typeof prisma.position.findMany>>;
+  let allClosed: { pnlSol: unknown; pnlPercent: unknown }[];
   try {
     allClosed = await prisma.position.findMany({
       where: { status: { in: ['closed', 'partial'] } },
