@@ -18,8 +18,10 @@ export class ConnectionManager {
   private subscriptionConnection: Connection;
   private rateLimiter: RateLimiter;
   private wallet: Keypair;
+  private solanaConfig: SolanaConfig;
 
   private constructor(solanaConfig: SolanaConfig, rateLimitConfig: RateLimitConfig) {
+    this.solanaConfig = solanaConfig;
     this.rateLimiter = RateLimiter.initialize(rateLimitConfig);
     this.rpcFallback = new RpcFallback(solanaConfig.heliusRpcUrl, solanaConfig.fallbackRpcUrl);
     this.subscriptionConnection = new Connection(solanaConfig.heliusRpcUrl, {
@@ -115,6 +117,26 @@ export class ConnectionManager {
   stop(): void {
     this.rpcFallback.stop();
     logger.info('ConnectionManager stopped');
+  }
+
+  /**
+   * Desconecta a subscription (WebSocket) — usa Connection só HTTP.
+   * Usado quando bot é desligado para parar totalmente a ligação com Helius.
+   */
+  disconnectSubscription(): void {
+    this.subscriptionConnection = new Connection(this.solanaConfig.heliusRpcUrl, 'processed');
+    logger.info('ConnectionManager: subscription WebSocket desconectado');
+  }
+
+  /**
+   * Reconecta a subscription com WebSocket (para onLogs).
+   */
+  reconnectSubscription(): void {
+    this.subscriptionConnection = new Connection(this.solanaConfig.heliusRpcUrl, {
+      commitment: 'processed',
+      wsEndpoint: this.solanaConfig.heliusWsUrl,
+    });
+    logger.info('ConnectionManager: subscription WebSocket reconectado');
   }
 
   private decodeBase58(encoded: string): Uint8Array {

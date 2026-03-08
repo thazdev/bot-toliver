@@ -70,6 +70,11 @@ export class BotHealthMonitor {
   private async performHealthCheck(): Promise<void> {
     await this.writeDashboardHeartbeat();
 
+    const enabled = await isBotEnabled();
+    if (!enabled) {
+      return;
+    }
+
     const elapsed = Date.now() - this.lastEventProcessedAt;
 
     if (elapsed > HEALTH_CRITICAL_MS) {

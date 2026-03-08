@@ -325,6 +325,28 @@ export class TradeFilterPipeline {
     }
   }
 
+  private lastRejectionSummaryAt = 0;
+
+  /** Loga resumo das rejeições a cada ~2 min para diagnóstico */
+  logRejectionSummaryIfNeeded(): void {
+    const now = Date.now();
+    if (now - this.lastRejectionSummaryAt < 120_000) return;
+    this.lastRejectionSummaryAt = now;
+
+    const recent = this.rejections.slice(-100);
+    const byStep = new Map<string, number>();
+    for (const r of recent) {
+      byStep.set(r.step, (byStep.get(r.step) ?? 0) + 1);
+    }
+    const sorted = [...byStep.entries()].sort((a, b) => b[1] - a[1]);
+    if (sorted.length > 0) {
+      logger.info('Resumo de rejeições (últimos 100 tokens)', {
+        total: recent.length,
+        porStep: Object.fromEntries(sorted),
+      });
+    }
+  }
+
   generateFeedbackReport(periodDays: number = 7): StrategyFeedbackReport {
     const cutoff = Date.now() - periodDays * 24 * 60 * 60 * 1000;
     const recentTrades = this.tradeOutcomes.filter(t => t.timestamp > cutoff);

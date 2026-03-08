@@ -48,7 +48,7 @@ import { StopLossManager } from './strategies/StopLossManager.js';
 import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
 import { getTierConfig, shouldRelaxFiltersForDryRun } from './strategies/config.js';
 import { getEffectiveDryRun } from './config/DryRunResolver.js';
-import { isBotEnabled } from './config/BotEnabledResolver.js';
+import { isBotEnabled, isBotEnabledNoCache } from './config/BotEnabledResolver.js';
 import { AlertService } from './alerts/AlertService.js';
 import { StatsTracker } from './stats/StatsTracker.js';
 import { StatsSnapshot } from './stats/StatsSnapshot.js';
@@ -82,6 +82,8 @@ let connectionManager: ConnectionManager;
 let statsSnapshot: StatsSnapshot;
 let botHealthMonitor: BotHealthMonitor;
 let tradingGuard: TradingGuard;
+let connectionsPaused = false;
+let botEnabledWatcherInterval: ReturnType<typeof setInterval> | null = null;
 
 async function main(): Promise<void> {
   (globalThis as { __botStartTime?: number }).__botStartTime = Date.now();
@@ -357,11 +359,17 @@ async function main(): Promise<void> {
 
         const filterOutcome = await tradeFilterPipeline.runPipeline(context);
         if (!filterOutcome.passed) {
+          const failedStep = filterOutcome.steps.find((s) => !s.passed);
           logger.info('Token rejeitado pelo filtro', {
-            token: tokenInfo.mintAddress,
+            token: tokenInfo.mintAddress.slice(0, 12),
+            step: failedStep?.step ?? 'unknown',
             reason: filterOutcome.rejectionReason,
+            entryScore: filterOutcome.finalEntryScore.toFixed(1),
+            holders: holderData.holderCount,
+            liquidity: pool.liquidity.toFixed(2),
             durationMs: filterOutcome.totalDurationMs,
           });
+          tradeFilterPipeline.logRejectionSummaryIfNeeded();
           return;
         }
 
@@ -421,8 +429,10 @@ async function main(): Promise<void> {
             logger.info('Trade blocked by risk manager', { reason: riskCheck.reason });
           }
         } else {
-          logger.debug('Nenhum sinal de compra (estratégias não aprovaram)', {
+          logger.info('Token passou no filtro mas sem sinal de compra', {
             tokenMint: tokenInfo.mintAddress.slice(0, 12),
+            holders: holderData.holderCount,
+            liquidity: pool.liquidity.toFixed(2),
             bestConfidence: buySignal?.confidence ?? 0,
           });
         }
@@ -540,32 +550,75 @@ async function main(): Promise<void> {
     new PollingFallbackListener(queueManager),
   ];
 
-  for (const listener of listeners) {
-    await listener.start();
+  const initiallyEnabled = await isBotEnabledNoCache();
+  if (initiallyEnabled) {
+    for (const listener of listeners) {
+      await listener.start();
+    }
+  } else {
+    connectionsPaused = true;
+    connectionManager.stop();
+    connectionManager.disconnectSubscription();
+    if (webSocketManager) {
+      await webSocketManager.disconnect();
+    }
+    logger.info('Bot iniciando desligado — conexões Helius pausadas');
   }
 
-  // Verifica se WebSocket está recebendo dados (slot updates são frequentes)
-  const subConn = connectionManager.getSubscriptionConnection();
-  let slotReceived = false;
-  const slotSubId = subConn.onSlotChange(() => {
-    if (!slotReceived) {
-      slotReceived = true;
-      logger.info('WebSocket OK: recebendo dados da Solana (slot subscription ativa)');
-    }
-  });
-  setTimeout(() => {
-    subConn.removeSlotChangeListener(slotSubId);
-    if (!slotReceived) {
-      logger.warn('WebSocket aviso: nenhum slot recebido em 30s — subscriptions (onLogs) podem não funcionar. Verifique HELIUS_WS_URL e plano Helius.', {
-        hint: 'O @solana/web3.js onLogs tem bugs conhecidos. Considere Helius Enhanced Webhooks como alternativa.',
-      });
-    }
-  }, 30_000);
+  // Verifica se WebSocket está recebendo dados (slot updates são frequentes) — só quando bot ligado
+  if (!connectionsPaused) {
+    const subConn = connectionManager.getSubscriptionConnection();
+    let slotReceived = false;
+    const slotSubId = subConn.onSlotChange(() => {
+      if (!slotReceived) {
+        slotReceived = true;
+        logger.info('WebSocket OK: recebendo dados da Solana (slot subscription ativa)');
+      }
+    });
+    setTimeout(() => {
+      subConn.removeSlotChangeListener(slotSubId);
+      if (!slotReceived) {
+        logger.warn('WebSocket aviso: nenhum slot recebido em 30s — subscriptions (onLogs) podem não funcionar. Verifique HELIUS_WS_URL e plano Helius.', {
+          hint: 'O @solana/web3.js onLogs tem bugs conhecidos. Considere Helius Enhanced Webhooks como alternativa.',
+        });
+      }
+    }, 30_000);
+  }
 
   positionTracker.start();
 
   statsSnapshot = new StatsSnapshot(statsTracker);
   statsSnapshot.start();
+
+  // Watcher: quando bot desligado no dashboard, pausa conexões Helius (WebSocket + RPC)
+  botEnabledWatcherInterval = setInterval(async () => {
+    try {
+      const enabled = await isBotEnabledNoCache();
+      if (!enabled && !connectionsPaused) {
+        connectionsPaused = true;
+        logger.info('Bot desligado — pausando conexões Helius (WebSocket + RPC)');
+        for (const listener of listeners) {
+          await listener.stop();
+        }
+        connectionManager.stop();
+        connectionManager.disconnectSubscription();
+        if (webSocketManager) {
+          await webSocketManager.disconnect();
+        }
+      } else if (enabled && connectionsPaused) {
+        connectionsPaused = false;
+        logger.info('Bot ligado — retomando conexões Helius');
+        connectionManager.reconnectSubscription();
+        connectionManager.startHealthCheck();
+        await webSocketManager.connect();
+        for (const listener of listeners) {
+          await listener.start();
+        }
+      }
+    } catch (err) {
+      logger.debug('BotEnabledWatcher error', { err: String(err) });
+    }
+  }, 5000);
 
   logger.info(`Bot iniciado — capital mode: SMALL (${config.trading.totalCapitalSol} SOL), reconciliação: ${reconciliation.totalChecked} posições verificadas`, {
     version: BOT_VERSION,
@@ -588,6 +641,11 @@ async function shutdown(signal: string): Promise<void> {
   logger.info(`Shutdown signal received: ${signal}`);
 
   try {
+    if (botEnabledWatcherInterval) {
+      clearInterval(botEnabledWatcherInterval);
+      botEnabledWatcherInterval = null;
+    }
+
     for (const listener of listeners) {
       await listener.stop();
     }

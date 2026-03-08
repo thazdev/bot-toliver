@@ -36,3 +36,9 @@ export async function isBotEnabled(): Promise<boolean> {
 export function invalidateBotEnabledCache(): void {
   cached = null;
 }
+
+/** Força leitura do Redis ignorando cache (para reação rápida ao toggle) */
+export async function isBotEnabledNoCache(): Promise<boolean> {
+  invalidateBotEnabledCache();
+  return isBotEnabled();
+}
