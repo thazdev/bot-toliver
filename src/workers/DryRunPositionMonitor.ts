@@ -196,7 +196,7 @@ async function monitorDryRunPositions(): Promise<void> {
         );
       } catch (_) {}
 
-      logger.info('DRY_RUN_SELL', {
+      logger.debug('DRY_RUN_SELL', {
         tokenMint: position.tokenMint,
         exitReason,
         pnlPct: pnlPct.toFixed(2) + '%',

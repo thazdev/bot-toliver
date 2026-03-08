@@ -68,7 +68,7 @@ export class EntryStrategy extends BaseStrategy {
       return skip(`Expected slippage loss ${(slippageLoss * 100).toFixed(1)}% exceeds ${(maxSlippageEntry * 100).toFixed(0)}% max — illiquid stop risk`);
     }
 
-    logger.info('EntryStrategy: BUY signal generated', {
+    logger.debug('EntryStrategy: BUY signal generated', {
       token: context.tokenInfo.mintAddress,
       trigger: triggerType,
       score: entryScore.totalScore.toFixed(1),
@@ -93,7 +93,7 @@ export class EntryStrategy extends BaseStrategy {
     const minBuys = parseInt(process.env.MIN_BUYS_LAST_60S ?? '1', 10) || 1;
 
     if (ctx.liquidity < minLiq) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'liquidity',
         value: ctx.liquidity,
@@ -103,7 +103,7 @@ export class EntryStrategy extends BaseStrategy {
     }
 
     if (ctx.holderData.holderCount < cfg.minHolderCount) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'holderCount',
         value: ctx.holderData.holderCount,
@@ -113,7 +113,7 @@ export class EntryStrategy extends BaseStrategy {
     }
 
     if (ctx.holderData.topHolderPercent > cfg.maxTopHolderPercent) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'topHolderPercent',
         value: ctx.holderData.topHolderPercent,
@@ -123,7 +123,7 @@ export class EntryStrategy extends BaseStrategy {
     }
 
     if (ctx.holderData.top5HolderPercent > cfg.maxTop5HolderPercent) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'top5HolderPercent',
         value: ctx.holderData.top5HolderPercent,
@@ -133,7 +133,7 @@ export class EntryStrategy extends BaseStrategy {
     }
 
     if (!ctx.safetyData.mintAuthorityDisabled) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'mintAuthorityDisabled',
         value: false,
@@ -143,7 +143,7 @@ export class EntryStrategy extends BaseStrategy {
     }
 
     if (!ctx.safetyData.freezeAuthorityAbsent) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'freezeAuthorityAbsent',
         value: false,
@@ -153,7 +153,7 @@ export class EntryStrategy extends BaseStrategy {
     }
 
     if (ctx.volumeContext.buyTxLast60s < minBuys) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'buyTxLast60s',
         value: ctx.volumeContext.buyTxLast60s,
@@ -163,7 +163,7 @@ export class EntryStrategy extends BaseStrategy {
     }
 
     if (ctx.safetyData.isBlacklisted) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'isBlacklisted',
         value: true,
@@ -173,7 +173,7 @@ export class EntryStrategy extends BaseStrategy {
     }
 
     if (ctx.safetyData.rugScore < 70) {
-      logger.info('SIGNAL_STACK_FAIL', {
+      logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'rugScore',
         value: ctx.safetyData.rugScore,

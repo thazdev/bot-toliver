@@ -34,7 +34,7 @@ export abstract class BaseListener {
    */
   async stop(): Promise<void> {
     this.isActive = false;
-    logger.info(`${this.name} listener stopped`);
+    logger.debug(`${this.name} listener stopped`);
   }
 
   /**
@@ -52,7 +52,7 @@ export abstract class BaseListener {
           if (!d.mintAddress || d.mintAddress.length < 32) {
             if (Date.now() - BaseListener.lastIgnoredLogAt > 10_000) {
               BaseListener.lastIgnoredLogAt = Date.now();
-              logger.info('BaseListener: TOKEN_DETECTED ignorado — mint vazio ou inválido', {
+              logger.debug('BaseListener: TOKEN_DETECTED ignorado — mint vazio ou inválido', {
                 source: this.name,
                 mintLen: d.mintAddress?.length ?? 0,
               });
@@ -70,7 +70,7 @@ export abstract class BaseListener {
           } satisfies TokenScanJobPayload);
           if (Date.now() - BaseListener.lastJobAddedLogAt > JOB_ADDED_LOG_THROTTLE_MS) {
             BaseListener.lastJobAddedLogAt = Date.now();
-            logger.info('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: 'TOKEN_DETECTED' });
+            logger.debug('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: 'TOKEN_DETECTED' });
           }
           break;
         }
@@ -79,7 +79,7 @@ export abstract class BaseListener {
           if (!d.tokenMint || d.tokenMint.length < 32) {
             if (Date.now() - BaseListener.lastIgnoredLogAt > 10_000) {
               BaseListener.lastIgnoredLogAt = Date.now();
-              logger.info('BaseListener: POOL_CREATED ignorado — tokenMint vazio ou inválido', {
+              logger.debug('BaseListener: POOL_CREATED ignorado — tokenMint vazio ou inválido', {
                 source: this.name,
                 tokenMintLen: d.tokenMint?.length ?? 0,
               });
@@ -97,7 +97,7 @@ export abstract class BaseListener {
           } satisfies TokenScanJobPayload);
           if (Date.now() - BaseListener.lastJobAddedLogAt > JOB_ADDED_LOG_THROTTLE_MS) {
             BaseListener.lastJobAddedLogAt = Date.now();
-            logger.info('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: event.type });
+            logger.debug('BaseListener: job TOKEN_SCAN adicionado', { source: this.name, type: event.type });
           }
           break;
         }

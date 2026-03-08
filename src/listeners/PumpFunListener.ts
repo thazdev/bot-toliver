@@ -48,7 +48,7 @@ export class PumpFunListener extends BaseListener {
         },
         'confirmed',
       );
-      logger.info('PumpFunListener subscribed', { programId: PUMP_FUN_PROGRAM });
+      logger.debug('PumpFunListener subscribed', { programId: PUMP_FUN_PROGRAM });
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error('PumpFunListener failed to start', { error: errorMsg });
@@ -71,7 +71,7 @@ export class PumpFunListener extends BaseListener {
       const now = Date.now();
       if (now - this.lastCreateLogAt > LOG_THROTTLE_MS) {
         this.lastCreateLogAt = now;
-        logger.info('Pump.fun token creation detected', { signature });
+        logger.debug('Pump.fun token creation detected', { signature });
       }
 
       // 1) Program data (base64) — sem RPC, mais rápido

@@ -42,7 +42,7 @@ export class TokenMintListener extends BaseListener {
         },
         'confirmed',
       );
-      logger.info('TokenMintListener subscribed to Token program');
+      logger.debug('TokenMintListener subscribed to Token program');
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error('TokenMintListener failed to start', { error: errorMsg });
@@ -65,7 +65,7 @@ export class TokenMintListener extends BaseListener {
     const now = Date.now();
     if (now - this.lastMintLogAt > LOG_THROTTLE_MS) {
       this.lastMintLogAt = now;
-      logger.info('New token mint detected', { signature });
+      logger.debug('New token mint detected', { signature });
     }
 
     const mintAddress = await this.extractMintFromTransaction(signature);

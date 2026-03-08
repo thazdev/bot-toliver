@@ -35,7 +35,7 @@ export class TransactionSender {
           }),
         );
 
-        logger.info('Transaction sent, awaiting confirmation', { signature: txSignature });
+        logger.debug('Transaction sent, awaiting confirmation', { signature: txSignature });
 
         const confirmation = await rateLimiter.schedule(() =>
           connection.confirmTransaction(txSignature, 'confirmed'),
@@ -45,7 +45,7 @@ export class TransactionSender {
           throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
         }
 
-        logger.info('Transaction confirmed', { signature: txSignature });
+        logger.debug('Transaction confirmed', { signature: txSignature });
         return txSignature;
       },
       TRADE_RETRY_ATTEMPTS,

@@ -42,7 +42,7 @@ export class PoolScanner {
           const pool = await dex.getPoolByAddress(knownPool.poolAddress);
           if (pool) {
             await this.cacheService.set(cacheKey, pool, POOL_CACHE_TTL_SECONDS);
-            logger.info('PoolScanner: pool from logs (getAccountInfo)', { mintAddress, dex: knownPool.dex });
+            logger.debug('PoolScanner: pool from logs (getAccountInfo)', { mintAddress, dex: knownPool.dex });
             return pool;
           }
         } catch {}
@@ -65,7 +65,7 @@ export class PoolScanner {
         const pool = await dex.getPool(mintAddress);
         if (pool) {
           await this.cacheService.set(cacheKey, pool, POOL_CACHE_TTL_SECONDS);
-          logger.info('PoolScanner: pool found', {
+          logger.debug('PoolScanner: pool found', {
             mintAddress,
             dex: pool.dex,
             poolAddress: pool.poolAddress,

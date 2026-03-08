@@ -95,7 +95,7 @@ export class WhaleMonitor {
     }
 
     if (whale.whaleDistinctBuyers5min >= this.config.multiWhaleBuyCount) {
-      logger.info('WhaleMonitor: MULTI-WHALE BUY signal', {
+      logger.debug('WhaleMonitor: MULTI-WHALE BUY signal', {
         token: context.tokenInfo.mintAddress,
         distinctBuyers: whale.whaleDistinctBuyers5min,
       });

@@ -87,7 +87,7 @@ export class TradeFilterPipeline {
     }
 
     if (process.env.SKIP_STAGE1_FOR_DEBUG === 'true') {
-      logger.info('STAGE1_SKIPPED_DEBUG');
+      logger.debug('STAGE1_SKIPPED_DEBUG');
       steps.push({ step: 'hard_reject', passed: true, reason: 'SKIP_STAGE1_FOR_DEBUG', durationMs: 0 });
       telemetry.stage1_result = 'skipped (debug)';
     } else if (this.emergencyHalt) {
@@ -95,7 +95,7 @@ export class TradeFilterPipeline {
       steps.push(step);
       telemetry.stage1_result = `rejected: ${step.reason}`;
       await this.logStage1Rejection(tokenMint, 'emergency_halt', step.reason);
-      logger.info('PIPELINE_TELEMETRY', { telemetry });
+      logger.debug('PIPELINE_TELEMETRY', { telemetry });
       return await this.buildOutcome(tokenMint, steps, startMs, 0);
     } else {
       const step2 = this.step2HardReject(context);
@@ -105,7 +105,7 @@ export class TradeFilterPipeline {
         const reasonCode = this.getStage1ReasonCode(step2.reason ?? '');
         await this.logStage1Rejection(tokenMint, reasonCode, step2.reason ?? '');
       }
-      logger.info('PIPELINE_TELEMETRY', { telemetry });
+      logger.debug('PIPELINE_TELEMETRY', { telemetry });
       if (!step2.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
     }
 
@@ -114,18 +114,18 @@ export class TradeFilterPipeline {
     const isRugReject = !step3.passed && step3.reason?.toLowerCase().includes('rug score');
     telemetry.stage2_result = step3.passed ? 'passed' : (isRugReject ? 'passed' : `rejected: ${step3.reason}`);
     telemetry.stage3_result = step3.passed ? 'passed' : (isRugReject ? `rejected: ${step3.reason}` : 'passed');
-    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    logger.debug('PIPELINE_TELEMETRY', { telemetry });
     if (!step3.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
     // Log obrigatório: confirmação de passagem Stage 2 → Stage 3
-    logger.info('STAGE2_PASSED', { tokenMint: tokenMint.slice(0, 12) });
+    logger.debug('STAGE2_PASSED', { tokenMint: tokenMint.slice(0, 12) });
     try {
       const redis = RedisClient.getInstance().getClient();
       await redis.incr('diag:stage2_passed');
     } catch (_) {}
 
     // Log obrigatório: entrada no Stage 3 (deep_analysis)
-    logger.info('STAGE3_ENTRY', { tokenMint: tokenMint.slice(0, 12) });
+    logger.debug('STAGE3_ENTRY', { tokenMint: tokenMint.slice(0, 12) });
     try {
       const redis = RedisClient.getInstance().getClient();
       await redis.incr('diag:stage3_entries');
@@ -135,13 +135,13 @@ export class TradeFilterPipeline {
     steps.push(step4);
     telemetry.stage4_result = step4.passed ? 'passed' : `rejected: ${step4.reason}`;
     Object.assign(telemetry.scores, step4.scores ?? {});
-    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    logger.debug('PIPELINE_TELEMETRY', { telemetry });
     if (!step4.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
     const step5 = this.step5MarketContext(context);
     steps.push(step5);
     telemetry.stage5_result = step5.passed ? 'passed' : `rejected: ${step5.reason}`;
-    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    logger.debug('PIPELINE_TELEMETRY', { telemetry });
     if (!step5.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
     const entryScore = step4.scores?.['entryScore'] ?? 0;
@@ -154,7 +154,7 @@ export class TradeFilterPipeline {
     const step6 = this.step6SizingRiskCheck(context);
     steps.push(step6);
     telemetry.stage6_result = step6.passed ? 'passed' : `rejected: ${step6.reason}`;
-    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    logger.debug('PIPELINE_TELEMETRY', { telemetry });
     if (!step6.passed) return await this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
 
     const threshold = this.filterConfig.minEntryScoreThreshold;
@@ -169,7 +169,7 @@ export class TradeFilterPipeline {
       steps.push(finalStep);
       telemetry.finalResult = `rejected: ${finalStep.reason}`;
       Object.assign(telemetry.scores, finalStep.scores ?? {});
-      logger.info('PIPELINE_TELEMETRY', { telemetry });
+      logger.debug('PIPELINE_TELEMETRY', { telemetry });
       return await this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
     }
 
@@ -183,7 +183,7 @@ export class TradeFilterPipeline {
     steps.push(finalStep);
     telemetry.finalResult = 'passed';
     Object.assign(telemetry.scores, finalStep.scores ?? {});
-    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    logger.debug('PIPELINE_TELEMETRY', { telemetry });
 
     return await this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
   }
@@ -225,7 +225,7 @@ export class TradeFilterPipeline {
     const minRequired = this.tierConfig.entry.minLiquiditySol;
 
     // STAGE2_VALUES: log para CADA token (passa ou rejeita) — diagnóstico
-    logger.info('STAGE2_VALUES', {
+    logger.debug('STAGE2_VALUES', {
       tokenMint: tokenMint.slice(0, 12),
       liquiditySOL: context.liquidity,
       minRequired,
@@ -274,7 +274,7 @@ export class TradeFilterPipeline {
   }
 
   private async logStage2Rejection(tokenMint: string, reasonCode: string, details: string): Promise<void> {
-    logger.info('STAGE2_REJECT_REASON', {
+    logger.debug('STAGE2_REJECT_REASON', {
       tokenMint: tokenMint.slice(0, 12),
       reason: reasonCode,
       details,
@@ -323,7 +323,7 @@ export class TradeFilterPipeline {
     const panicMode = context.sentimentData.sentimentRegime === 'panic';
     const dailyLossExceeded = context.dailyLossPercent >= 5;
 
-    logger.info('STAGE5_CHECK', {
+    logger.debug('STAGE5_CHECK', {
       panicMode,
       consecutiveLosses: context.consecutiveLosses,
       dailyLossExceeded,
@@ -458,7 +458,7 @@ export class TradeFilterPipeline {
 
   private async logStage1Rejection(tokenMint: string, reasonCode: string, details: string): Promise<void> {
     const code = reasonCode || 'outros';
-    logger.info('STAGE1_REJECT_REASON', {
+    logger.debug('STAGE1_REJECT_REASON', {
       tokenMint: tokenMint.slice(0, 12),
       reason: code,
       rawReason: details || 'undefined',
@@ -552,7 +552,7 @@ export class TradeFilterPipeline {
     }
     const sorted = [...byStep.entries()].sort((a, b) => b[1] - a[1]);
     if (sorted.length > 0) {
-      logger.info('Resumo de rejeições (últimos 100 tokens)', {
+      logger.debug('Resumo de rejeições (últimos 100 tokens)', {
         total: recent.length,
         porStep: Object.fromEntries(sorted),
       });
@@ -564,7 +564,7 @@ export class TradeFilterPipeline {
     const recentTrades = this.tradeOutcomes.filter(t => t.timestamp > cutoff);
 
     if (recentTrades.length < this.filterConfig.feedbackMinSampleSize) {
-      logger.info('TradeFilterPipeline: insufficient data for feedback', {
+      logger.debug('TradeFilterPipeline: insufficient data for feedback', {
         trades: recentTrades.length,
         required: this.filterConfig.feedbackMinSampleSize,
       });
@@ -630,7 +630,7 @@ export class TradeFilterPipeline {
       parameterAdjustments: adjustments,
     };
 
-    logger.info('TradeFilterPipeline: feedback report generated', {
+    logger.debug('TradeFilterPipeline: feedback report generated', {
       period: report.period,
       winRate: report.winRate.toFixed(1),
       avgRoi: report.avgRoi.toFixed(2),
@@ -653,7 +653,7 @@ export class TradeFilterPipeline {
     for (const [param, adj] of Object.entries(report.parameterAdjustments)) {
       const changePct = Math.abs(adj.recommended - adj.current) / adj.current;
       if (changePct <= this.filterConfig.feedbackAutoAdjustMaxPct / 100) {
-        logger.info('TradeFilterPipeline: auto-adjusting parameter', {
+        logger.debug('TradeFilterPipeline: auto-adjusting parameter', {
           param,
           from: adj.current,
           to: adj.recommended,

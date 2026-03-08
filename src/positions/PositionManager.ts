@@ -28,7 +28,7 @@ export class PositionManager {
       for (const pos of openPositions) {
         this.positions.set(pos.id, pos);
       }
-      logger.info('PositionManager: loaded open positions', { count: openPositions.length });
+      logger.debug('PositionManager: loaded open positions', { count: openPositions.length });
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error('PositionManager: failed to load positions', { error: errorMsg });
@@ -85,7 +85,7 @@ export class PositionManager {
       });
     }
 
-    logger.info('Position opened', {
+    logger.debug('Position opened', {
       positionId: position.id,
       tokenMint,
       entryPrice,
@@ -126,7 +126,7 @@ export class PositionManager {
       });
     }
 
-    logger.info('Position closed', {
+    logger.debug('Position closed', {
       positionId,
       tokenMint: position.tokenMint,
       pnlSol: pnl.pnlSol,

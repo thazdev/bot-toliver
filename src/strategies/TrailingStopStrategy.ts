@@ -194,7 +194,7 @@ export class TrailingStopStrategy {
     const wickOrTrend = this.isWickOrTrend(position.id, state.breachStartMs);
 
     if (wickOrTrend === 'wick') {
-      logger.info('TrailingStopStrategy: wick_false_trigger — cancelling stop, resetting timer', {
+      logger.debug('TrailingStopStrategy: wick_false_trigger — cancelling stop, resetting timer', {
         positionId: position.id,
         currentPrice: context.currentPrice.toFixed(9),
         trailStop: state.currentTrailStop.toFixed(9),
@@ -208,7 +208,7 @@ export class TrailingStopStrategy {
       ? ((context.currentPrice - position.entryPrice) / position.entryPrice) * 100
       : 0;
 
-    logger.info('TrailingStopStrategy: trailing stop TRIGGERED (trend confirmed)', {
+    logger.debug('TrailingStopStrategy: trailing stop TRIGGERED (trend confirmed)', {
       positionId: position.id,
       currentPrice: context.currentPrice.toFixed(9),
       trailStop: state.currentTrailStop.toFixed(9),

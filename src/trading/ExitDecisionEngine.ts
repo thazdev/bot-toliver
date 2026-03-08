@@ -50,7 +50,7 @@ export class ExitDecisionEngine {
 
   async requestExit(signal: ExitSignal): Promise<void> {
     try {
-      logger.info('ExitDecisionEngine: exit request received', {
+      logger.debug('ExitDecisionEngine: exit request received', {
         source: signal.source,
         positionId: signal.positionId,
         tokenMint: signal.tokenMint.slice(0, 8),
@@ -79,7 +79,7 @@ export class ExitDecisionEngine {
       const lockAcquired = await this.acquireLock(lockKey, EXIT_LOCK_TTL_SEC);
 
       if (!lockAcquired) {
-        logger.info('ExitDecisionEngine: exit already in progress', {
+        logger.debug('ExitDecisionEngine: exit already in progress', {
           positionId: signal.positionId,
           ignoredSource: signal.source,
         });
@@ -126,7 +126,7 @@ export class ExitDecisionEngine {
     const hasEmergency = this.emergencyQueue.has(signal.tokenMint);
 
     if (hasEmergency) {
-      logger.info('ExitDecisionEngine: HIGH signal deferred — EMERGENCY active for same token', {
+      logger.debug('ExitDecisionEngine: HIGH signal deferred — EMERGENCY active for same token', {
         source: signal.source,
         positionId: signal.positionId,
         tokenMint: signal.tokenMint.slice(0, 8),
@@ -134,7 +134,7 @@ export class ExitDecisionEngine {
       return;
     }
 
-    logger.info('ExitDecisionEngine: HIGH urgency exit executing', {
+    logger.debug('ExitDecisionEngine: HIGH urgency exit executing', {
       source: signal.source,
       positionId: signal.positionId,
       reason: signal.reason,
@@ -168,7 +168,7 @@ export class ExitDecisionEngine {
     const lockAcquired = await this.acquireLock(lockKey, EXIT_LOCK_TTL_SEC);
 
     if (!lockAcquired) {
-      logger.info('ExitDecisionEngine: batch processing skipped — lock held', {
+      logger.debug('ExitDecisionEngine: batch processing skipped — lock held', {
         positionId,
         pendingCount: pending.length,
       });
@@ -184,7 +184,7 @@ export class ExitDecisionEngine {
         .filter(p => p !== best)
         .map(p => p.signal.source);
 
-      logger.info('ExitDecisionEngine: NORMAL batch resolved', {
+      logger.debug('ExitDecisionEngine: NORMAL batch resolved', {
         positionId,
         winnerSource: best.signal.source,
         winnerSellPct: best.signal.sellPercentage,
@@ -224,7 +224,7 @@ export class ExitDecisionEngine {
         },
       );
 
-      logger.info('ExitDecisionEngine: sell executed', {
+      logger.debug('ExitDecisionEngine: sell executed', {
         source: signal.source,
         positionId: signal.positionId,
         tokenMint: signal.tokenMint.slice(0, 8),

@@ -41,7 +41,7 @@ export class ConnectionManager {
       throw new Error('Invalid WALLET_PRIVATE_KEY: must be a valid base58 or base64 encoded secret key');
     }
 
-    logger.info('ConnectionManager initialized', {
+    logger.debug('ConnectionManager initialized', {
       primaryRpc: solanaConfig.heliusRpcUrl.slice(0, 30) + '...',
       subscriptionWs: solanaConfig.heliusWsUrl.startsWith('wss') ? 'enabled' : 'disabled',
       walletPublicKey: this.wallet.publicKey.toBase58(),
@@ -116,7 +116,7 @@ export class ConnectionManager {
    */
   stop(): void {
     this.rpcFallback.stop();
-    logger.info('ConnectionManager stopped');
+    logger.debug('ConnectionManager stopped');
   }
 
   /**
@@ -125,7 +125,7 @@ export class ConnectionManager {
    */
   disconnectSubscription(): void {
     this.subscriptionConnection = new Connection(this.solanaConfig.heliusRpcUrl, 'processed');
-    logger.info('ConnectionManager: subscription WebSocket desconectado');
+    logger.debug('ConnectionManager: subscription WebSocket desconectado');
   }
 
   /**
@@ -136,7 +136,7 @@ export class ConnectionManager {
       commitment: 'processed',
       wsEndpoint: this.solanaConfig.heliusWsUrl,
     });
-    logger.info('ConnectionManager: subscription WebSocket reconectado');
+    logger.debug('ConnectionManager: subscription WebSocket reconectado');
   }
 
   private decodeBase58(encoded: string): Uint8Array {

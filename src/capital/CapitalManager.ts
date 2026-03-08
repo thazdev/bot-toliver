@@ -30,7 +30,7 @@ export class CapitalManager {
     this.peakCapital = config.trading.totalCapitalSol;
     this.lastRebalanceAt = Date.now();
     this.capitalConfig = getTierConfig(config.trading.strategyTier).capital;
-    logger.info('CapitalManager initialized', {
+    logger.debug('CapitalManager initialized', {
       totalCapitalSol: this.totalCapital,
       hotWallet: this.getHotWalletCapital().toFixed(4),
       reserve: this.getReserveCapital().toFixed(4),
@@ -215,7 +215,7 @@ export class CapitalManager {
   }
 
   rebalance(): void {
-    logger.info('CapitalManager: rebalancing portfolio buckets', {
+    logger.debug('CapitalManager: rebalancing portfolio buckets', {
       totalCapital: this.totalCapital,
       allocated: this.allocatedCapital,
     });

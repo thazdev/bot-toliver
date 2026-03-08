@@ -19,9 +19,9 @@ export class TelegramProvider {
     this.apiUrl = `https://api.telegram.org/bot${this.botToken}`;
 
     if (this.enabled) {
-      logger.info('TelegramProvider enabled');
+      logger.debug('TelegramProvider enabled');
     } else {
-      logger.info('TelegramProvider disabled (no bot token or chat ID)');
+      logger.debug('TelegramProvider disabled (no bot token or chat ID)');
     }
   }
 

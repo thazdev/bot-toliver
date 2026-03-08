@@ -51,7 +51,7 @@ export class BotHealthMonitor {
       this.performHealthCheck();
     }, BOT_HEALTH_CHECK_MS);
 
-    logger.info('BotHealthMonitor: started', {
+    logger.debug('BotHealthMonitor: started', {
       checkIntervalMs: BOT_HEALTH_CHECK_MS,
       warningThresholdMs: HEALTH_WARNING_MS,
       criticalThresholdMs: HEALTH_CRITICAL_MS,
@@ -64,7 +64,7 @@ export class BotHealthMonitor {
       this.healthCheckInterval = null;
     }
     BotHealthMonitor.instance = null;
-    logger.info('BotHealthMonitor: stopped');
+    logger.debug('BotHealthMonitor: stopped');
   }
 
   private async performHealthCheck(): Promise<void> {

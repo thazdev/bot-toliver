@@ -393,7 +393,7 @@ export class ScamDetector {
 
         const totalFundingTxCount = fundingSigs.length;
         if (totalFundingTxCount >= 10) {
-          logger.info('ScamDetector: funding source has high tx count — likely exchange/hub, skipping cluster expansion', {
+          logger.debug('ScamDetector: funding source has high tx count — likely exchange/hub, skipping cluster expansion', {
             devWallet: devWallet.slice(0, 8),
             fundingSource: fundingSource.slice(0, 8),
             txCountSampled: totalFundingTxCount,
@@ -445,7 +445,7 @@ export class ScamDetector {
 
       await this.cacheService.set(cacheKey, cluster, DEV_CLUSTER_CACHE_TTL);
 
-      logger.info('ScamDetector: dev wallet cluster resolved', {
+      logger.debug('ScamDetector: dev wallet cluster resolved', {
         devWallet: devWallet.slice(0, 8),
         fundingSource: fundingSource.slice(0, 8),
         clusterSize: cluster.length,
@@ -505,7 +505,7 @@ export class ScamDetector {
       const scorePenalty = recentTokenCreators >= 2 ? 25 : 0;
 
       if (scorePenalty > 0) {
-        logger.info('ScamDetector: cluster has multiple recent token creators', {
+        logger.debug('ScamDetector: cluster has multiple recent token creators', {
           devWallet: devWallet.slice(0, 8),
           recentTokenCreators,
           scorePenalty,

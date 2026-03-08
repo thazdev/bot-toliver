@@ -42,7 +42,7 @@ export class RaydiumPoolListener extends BaseListener {
         },
         'confirmed',
       );
-      logger.info('RaydiumPoolListener subscribed', { programId: RAYDIUM_AMM_V4 });
+      logger.debug('RaydiumPoolListener subscribed', { programId: RAYDIUM_AMM_V4 });
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error('RaydiumPoolListener failed to start', { error: errorMsg });
@@ -62,7 +62,7 @@ export class RaydiumPoolListener extends BaseListener {
     );
 
     if (hasInitialize) {
-      logger.info('Raydium pool initialization detected', { signature });
+      logger.debug('Raydium pool initialization detected', { signature });
       // Não emite sem tokenMint — LogsListener cobre com dados extraídos da tx
     }
 

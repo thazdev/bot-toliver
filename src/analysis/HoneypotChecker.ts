@@ -99,7 +99,7 @@ export class HoneypotChecker {
       return sellHistoryResult;
     }
 
-    logger.info('HoneypotChecker: all checks passed', { tokenMint });
+    logger.debug('HoneypotChecker: all checks passed', { tokenMint });
     return result;
   }
 

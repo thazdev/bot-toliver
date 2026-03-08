@@ -93,7 +93,7 @@ export class StopLossManager {
     if (pnlPercent >= cfg.breakEvenActivationGain) {
       this.transitionState(position.id, 'BREAK_EVEN_ACTIVE');
       status.currentStopPrice = position.entryPrice * 1.05;
-      logger.info('StopLossManager: break-even stop activated', {
+      logger.debug('StopLossManager: break-even stop activated', {
         positionId: position.id,
         pnlPercent: pnlPercent.toFixed(2),
         newStop: status.currentStopPrice.toFixed(9),
@@ -128,7 +128,7 @@ export class StopLossManager {
 
     if (pnlPercent > -cfg.softWarningPercent + 3) {
       this.transitionState(position.id, 'WATCHING');
-      logger.info('StopLossManager: recovered from soft warning', {
+      logger.debug('StopLossManager: recovered from soft warning', {
         positionId: position.id,
         pnlPercent: pnlPercent.toFixed(2),
       });
@@ -154,7 +154,7 @@ export class StopLossManager {
         ? ((context.currentPrice - position.entryPrice) / position.entryPrice) * 100
         : 0;
 
-      logger.info('StopLossManager: trailing stop triggered', {
+      logger.debug('StopLossManager: trailing stop triggered', {
         positionId: position.id,
         currentPrice: context.currentPrice.toFixed(9),
         stopPrice: status.currentStopPrice.toFixed(9),
@@ -287,6 +287,6 @@ export class StopLossManager {
 
   private blacklistToken(tokenMint: string): void {
     this.blacklist.set(tokenMint, Date.now());
-    logger.info('StopLossManager: token blacklisted for 24h', { tokenMint });
+    logger.debug('StopLossManager: token blacklisted for 24h', { tokenMint });
   }
 }

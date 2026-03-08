@@ -113,7 +113,7 @@ export class LaunchStrategy extends BaseStrategy {
     const portfolioPercent = cfg.phase1MaxPortfolioPercent / 100;
     const buySizeSol = Math.min(maxSize, context.liquidity * portfolioPercent);
 
-    logger.info('LaunchStrategy: Phase 1 SNIPER entry', {
+    logger.debug('LaunchStrategy: Phase 1 SNIPER entry', {
       token: context.tokenInfo.mintAddress,
       ageSec: context.tokenAgeSec,
       poolSol: context.poolInitialSol,
@@ -182,7 +182,7 @@ export class LaunchStrategy extends BaseStrategy {
     const confidence = 0.75;
     const sizeSol = this.tierConfig.entry.solSizeMax * confidence;
 
-    logger.info('LaunchStrategy: Phase 2 CONFIRMATION entry', {
+    logger.debug('LaunchStrategy: Phase 2 CONFIRMATION entry', {
       token: context.tokenInfo.mintAddress,
       ageSec: context.tokenAgeSec,
       holders: context.holderData.holderCount,
@@ -277,7 +277,7 @@ export class LaunchStrategy extends BaseStrategy {
       const confidence = 0.70;
       const sizeSol = this.tierConfig.entry.solSizeMax * 0.6;
 
-      logger.info('LaunchStrategy: Pump.fun NEAR-GRADUATION entry', {
+      logger.debug('LaunchStrategy: Pump.fun NEAR-GRADUATION entry', {
         token: context.tokenInfo.mintAddress,
         mcap: context.pumpfunMarketCap,
       });
@@ -292,7 +292,7 @@ export class LaunchStrategy extends BaseStrategy {
     }
 
     if (context.pumpfunGraduated && context.pumpfunMarketCap >= cfg.pumpfunGradMcap) {
-      logger.info('LaunchStrategy: Pump.fun GRADUATION event detected', {
+      logger.debug('LaunchStrategy: Pump.fun GRADUATION event detected', {
         token: context.tokenInfo.mintAddress,
         mcap: context.pumpfunMarketCap,
       });

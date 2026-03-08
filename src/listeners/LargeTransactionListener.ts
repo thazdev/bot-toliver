@@ -39,7 +39,7 @@ export class LargeTransactionListener extends BaseListener {
         },
         'confirmed',
       );
-      logger.info('LargeTransactionListener subscribed', {
+      logger.debug('LargeTransactionListener subscribed', {
         thresholdSol: this.thresholdSol,
       });
     } catch (error: unknown) {
@@ -72,7 +72,7 @@ export class LargeTransactionListener extends BaseListener {
     });
 
     if (amountMatch) {
-      logger.info('Large transaction detected', { signature, thresholdSol: this.thresholdSol });
+      logger.debug('Large transaction detected', { signature, thresholdSol: this.thresholdSol });
 
       this.queueManager.addJob(QueueName.TOKEN_SCAN, 'large-tx-detected', {
         tokenInfo: { mintAddress: '' },

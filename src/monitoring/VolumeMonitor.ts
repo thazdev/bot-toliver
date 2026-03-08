@@ -35,7 +35,7 @@ export class VolumeMonitor {
     const baseline = this.baselineVolumes.get(tokenMint) ?? 0;
 
     if (baseline > 0 && volume.txCount5m > baseline * 3) {
-      logger.info('VolumeMonitor: volume spike detected', {
+      logger.debug('VolumeMonitor: volume spike detected', {
         tokenMint,
         currentTxCount5m: volume.txCount5m,
         baseline,

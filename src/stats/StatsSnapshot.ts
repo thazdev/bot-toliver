@@ -26,7 +26,7 @@ export class StatsSnapshot {
       await this.takeSnapshot();
     });
 
-    logger.info('StatsSnapshot cron started', { schedule: STATS_SNAPSHOT_INTERVAL_CRON });
+    logger.debug('StatsSnapshot cron started', { schedule: STATS_SNAPSHOT_INTERVAL_CRON });
   }
 
   /**
@@ -65,7 +65,7 @@ export class StatsSnapshot {
     if (this.cronJob) {
       this.cronJob.stop();
       this.cronJob = null;
-      logger.info('StatsSnapshot cron stopped');
+      logger.debug('StatsSnapshot cron stopped');
     }
   }
 }

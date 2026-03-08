@@ -82,7 +82,7 @@ export class MultiStageProfitTaker {
     state.totalSoldPercent += sellPercent;
     state.breakEvenStopActive = true;
 
-    logger.info('MultiStageProfitTaker: TP1 hit — selling and moving stop to break-even', {
+    logger.debug('MultiStageProfitTaker: TP1 hit — selling and moving stop to break-even', {
       positionId: position.id,
       pnlPercent: pnlPercent.toFixed(1),
       sellPercent,
@@ -118,7 +118,7 @@ export class MultiStageProfitTaker {
     state.totalSoldPercent += cappedSell;
     state.trailingStopActive = true;
 
-    logger.info('MultiStageProfitTaker: TP2 hit — activating trailing stop', {
+    logger.debug('MultiStageProfitTaker: TP2 hit — activating trailing stop', {
       positionId: position.id,
       pnlPercent: pnlPercent.toFixed(1),
       sellPercent: cappedSell.toFixed(1),
@@ -156,7 +156,7 @@ export class MultiStageProfitTaker {
     state.stage3Executed = true;
     state.totalSoldPercent += cappedSell;
 
-    logger.info('MultiStageProfitTaker: TP3 hit — tightening trail to -10%', {
+    logger.debug('MultiStageProfitTaker: TP3 hit — tightening trail to -10%', {
       positionId: position.id,
       pnlPercent: pnlPercent.toFixed(1),
       sellPercent: cappedSell.toFixed(1),
@@ -188,7 +188,7 @@ export class MultiStageProfitTaker {
     state.stage4Executed = true;
     state.totalSoldPercent = 100;
 
-    logger.info('MultiStageProfitTaker: TP4 MOONBAG — selling remaining', {
+    logger.debug('MultiStageProfitTaker: TP4 MOONBAG — selling remaining', {
       positionId: position.id,
       pnlPercent: pnlPercent.toFixed(1),
       remainingPercent: remainingPercent.toFixed(1),

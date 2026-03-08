@@ -49,7 +49,7 @@ export class TransactionManager {
     if (request.dryRun || envDryRun) {
       const amountLamports = solToLamports(request.amountSol).toNumber();
       const simulatedOut = Math.floor(amountLamports * 0.97 * 1000);
-      logger.info('TransactionManager: DRY_RUN bypass — no Jupiter call, no retry', {
+      logger.debug('TransactionManager: DRY_RUN bypass — no Jupiter call, no retry', {
         tokenMint: request.tokenMint.slice(0, 12),
         direction: context.type,
         amountSOL: request.amountSol,
@@ -79,7 +79,7 @@ export class TransactionManager {
           context.isEmergency,
         );
 
-        logger.info('TransactionManager: executing attempt', {
+        logger.debug('TransactionManager: executing attempt', {
           attempt,
           maxRetries,
           type: context.type,
@@ -115,7 +115,7 @@ export class TransactionManager {
 
         if (attempt < maxRetries && context.type === 'SELL') {
           const waitMs = SELL_RETRY_DELAY_MS * attempt;
-          logger.info('TransactionManager: waiting before next sell retry', { waitMs });
+          logger.debug('TransactionManager: waiting before next sell retry', { waitMs });
           await sleep(waitMs);
         }
       }
@@ -201,7 +201,7 @@ export class TransactionManager {
       throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
     }
 
-    logger.info('TransactionManager: transaction confirmed', {
+    logger.debug('TransactionManager: transaction confirmed', {
       signature: txSignature,
       direction: request.direction,
       tokenMint: request.tokenMint.slice(0, 8),
@@ -236,7 +236,7 @@ export class TransactionManager {
         EMERGENCY_SLIPPAGE_BPS,
       );
       if (result.success) {
-        logger.info('TransactionManager: emergency fallback sell succeeded', {
+        logger.debug('TransactionManager: emergency fallback sell succeeded', {
           positionId,
           signature: result.signature,
         });

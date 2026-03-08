@@ -59,7 +59,7 @@ export class MarketSentiment {
       ? inputs.solTransferVolume / inputs.avgSolTransferVolume7d >= this.config.solTransferSpikeMultiplier
       : false;
 
-    logger.info('MarketSentiment: score updated', {
+    logger.debug('MarketSentiment: score updated', {
       score: clamped.toFixed(1),
       regime: this.currentRegime,
       components: {

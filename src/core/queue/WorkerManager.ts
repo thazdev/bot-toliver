@@ -53,7 +53,7 @@ export class WorkerManager {
     });
 
     this.workers.set(queueName, worker);
-    logger.info('Worker registered', { queueName, concurrency });
+    logger.debug('Worker registered', { queueName, concurrency });
   }
 
   /**
@@ -65,6 +65,6 @@ export class WorkerManager {
     );
     await Promise.all(closePromises);
     this.workers.clear();
-    logger.info('All workers shut down');
+    logger.debug('All workers shut down');
   }
 }

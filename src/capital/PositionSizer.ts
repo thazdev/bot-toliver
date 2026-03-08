@@ -48,7 +48,7 @@ export class PositionSizer {
     atrPercent?: number,
   ): number {
     if (this.isPaused()) {
-      logger.info('PositionSizer: trading paused due to consecutive losses');
+      logger.debug('PositionSizer: trading paused due to consecutive losses');
       return 0;
     }
 
@@ -163,12 +163,12 @@ export class PositionSizer {
       if (this.inDrawdownRecovery) {
         if (this.consecutiveWins >= CONSECUTIVE_LOSS_RULES.recoverTo75AfterWins && this.sizeMultiplier < 0.75) {
           this.sizeMultiplier = 0.75;
-          logger.info('PositionSizer: recovering — size restored to 75%');
+          logger.debug('PositionSizer: recovering — size restored to 75%');
         }
         if (this.consecutiveWins >= CONSECUTIVE_LOSS_RULES.fullRecoverAfterWins) {
           this.sizeMultiplier = 1.0;
           this.inDrawdownRecovery = false;
-          logger.info('PositionSizer: full recovery — size restored to 100%');
+          logger.debug('PositionSizer: full recovery — size restored to 100%');
         }
       }
     } else {
@@ -200,7 +200,7 @@ export class PositionSizer {
     }
     if (this.pausedUntil > 0 && Date.now() >= this.pausedUntil) {
       this.pausedUntil = 0;
-      logger.info('PositionSizer: pause expired — trading resumed');
+      logger.debug('PositionSizer: pause expired — trading resumed');
     }
     return false;
   }

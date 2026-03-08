@@ -24,7 +24,7 @@ export class AlertService {
     message: string,
     data?: Record<string, unknown>,
   ): Promise<void> {
-    logger.info('Alert dispatched', { level, message });
+    logger.debug('Alert dispatched', { level, message });
 
     try {
       await this.telegramProvider.send(level, message, data);

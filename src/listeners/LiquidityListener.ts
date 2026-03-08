@@ -47,7 +47,7 @@ export class LiquidityListener extends BaseListener {
           'confirmed',
         );
         this.subscriptionIds.push(subId);
-        logger.info(`LiquidityListener subscribed to ${program.name}`, { programId: program.id });
+        logger.debug(`LiquidityListener subscribed to ${program.name}`, { programId: program.id });
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         logger.error(`LiquidityListener failed to subscribe to ${program.name}`, { error: errorMsg });
@@ -73,7 +73,7 @@ export class LiquidityListener extends BaseListener {
     const now = Date.now();
     if (now - this.lastLiquidityLogAt > LOG_THROTTLE_MS) {
       this.lastLiquidityLogAt = now;
-      logger.info('Liquidity add detected', { program: programName, signature });
+      logger.debug('Liquidity add detected', { program: programName, signature });
     }
 
     // Não emite POOL_CREATED sem tokenMint — evita flood de "ignorado" no BaseListener.

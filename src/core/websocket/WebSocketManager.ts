@@ -52,7 +52,7 @@ export class WebSocketManager extends EventEmitter {
       this.ws.on('open', () => {
         this.isConnecting = false;
         this.reconnectHandler.reset();
-        logger.info('WebSocket connected', { url: this.wsUrl.slice(0, 40) + '...' });
+        logger.debug('WebSocket connected', { url: this.wsUrl.slice(0, 40) + '...' });
         this.emit('connected');
         this.resubscribeAll();
         resolve();
@@ -112,7 +112,7 @@ export class WebSocketManager extends EventEmitter {
       });
     }
     if (subs.length > 0) {
-      logger.info('Re-subscribed to all active subscriptions', { count: subs.length });
+      logger.debug('Re-subscribed to all active subscriptions', { count: subs.length });
     }
   }
 
@@ -183,6 +183,6 @@ export class WebSocketManager extends EventEmitter {
       this.ws = null;
     }
 
-    logger.info('WebSocketManager disconnected');
+    logger.debug('WebSocketManager disconnected');
   }
 }

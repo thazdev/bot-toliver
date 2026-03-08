@@ -58,7 +58,7 @@ export class RpcFallback {
       }
     }, HEALTH_CHECK_INTERVAL_MS);
 
-    logger.info('RPC health check started', { intervalMs: HEALTH_CHECK_INTERVAL_MS });
+    logger.debug('RPC health check started', { intervalMs: HEALTH_CHECK_INTERVAL_MS });
   }
 
   /**
@@ -72,7 +72,7 @@ export class RpcFallback {
     } else {
       this.activeConnection = this.primaryConnection;
       this.isPrimaryActive = true;
-      logger.info('Switched back to primary RPC endpoint');
+      logger.debug('Switched back to primary RPC endpoint');
     }
   }
 
@@ -83,7 +83,7 @@ export class RpcFallback {
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
       this.healthCheckTimer = null;
-      logger.info('RPC health check stopped');
+      logger.debug('RPC health check stopped');
     }
   }
 }

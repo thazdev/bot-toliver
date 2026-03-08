@@ -80,7 +80,7 @@ export class LogsListener extends BaseListener {
           commitment,
         );
         this.subscriptionIds.push(subId);
-        logger.info(`LogsListener subscribed to ${program.name}`, { programId: program.id });
+        logger.debug(`LogsListener subscribed to ${program.name}`, { programId: program.id });
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         logger.error(`LogsListener failed to subscribe to ${program.name}`, {
@@ -91,7 +91,7 @@ export class LogsListener extends BaseListener {
     }
 
     this.discoveryHeartbeatInterval = setInterval(() => {
-      logger.info('DISCOVERY_HEARTBEAT', {
+      logger.debug('DISCOVERY_HEARTBEAT', {
         eventsLast60s: this.eventCounter,
         tokensDetectedLast60s: this.tokenCounter,
         poolsDetectedLast60s: this.poolCounter,
@@ -126,7 +126,7 @@ export class LogsListener extends BaseListener {
     const now = Date.now();
     if (now - this.lastLogInfoAt > 60_000) {
       this.lastLogInfoAt = now;
-      logger.info('LogsListener: WebSocket recebendo logs', {
+      logger.debug('LogsListener: WebSocket recebendo logs', {
         batchesReceived: this.logBatchCount,
         program: programName,
       });
@@ -318,7 +318,7 @@ export class LogsListener extends BaseListener {
     const now = Date.now();
     if (now - this.lastDiscoveryLogAt > DISCOVERY_LOG_INTERVAL_MS) {
       this.lastDiscoveryLogAt = now;
-      logger.info('LogsListener: new token discovered', {
+      logger.debug('LogsListener: new token discovered', {
         source: detected.source,
         tokenMint: tokenMint.slice(0, 8),
         poolAddress: poolAddress.slice(0, 8),

@@ -136,7 +136,7 @@ export class RiskManager {
     const effectiveSize = tradeRequest.amountSol * this.newPositionSizeMultiplier;
     if (effectiveSize > maxSinglePosition) {
       const availableCapital = this.exposureTracker.getAvailableCapital();
-      logger.info('POSITION_SIZE_BLOCKED', {
+      logger.debug('POSITION_SIZE_BLOCKED', {
         calculatedSize: effectiveSize,
         limit: maxSinglePosition,
         limitType: 'maxSingleTokenExposurePercent',
@@ -152,7 +152,7 @@ export class RiskManager {
     const availableCapital = this.exposureTracker.getAvailableCapital();
     const availableAfterGas = availableCapital - riskCfg.gasReserveSol;
     if (tradeRequest.amountSol > availableAfterGas) {
-      logger.info('POSITION_SIZE_BLOCKED', {
+      logger.debug('POSITION_SIZE_BLOCKED', {
         calculatedSize: tradeRequest.amountSol,
         limit: availableAfterGas,
         limitType: 'availableCapitalAfterGas',
@@ -241,7 +241,7 @@ export class RiskManager {
     }
 
     if (this.currentMarketRegime !== previousRegime) {
-      logger.info('RiskManager: market regime changed', {
+      logger.debug('RiskManager: market regime changed', {
         from: previousRegime,
         to: this.currentMarketRegime,
         solPriceChange24h,
@@ -318,14 +318,14 @@ export class RiskManager {
       this.dailyRealizedLoss = 0;
       this.lastDayReset = midnightUtc;
       this.portfolioValueStart = this.exposureTracker.getAvailableCapital() + this.exposureTracker.getTotalExposure();
-      logger.info('RiskManager: daily risk budget reset at midnight UTC');
+      logger.debug('RiskManager: daily risk budget reset at midnight UTC');
     }
 
     const weekStart = this.getWeekStartMs();
     if (weekStart > this.lastWeekReset) {
       this.weeklyLoss = 0;
       this.lastWeekReset = weekStart;
-      logger.info('RiskManager: weekly loss counter reset');
+      logger.debug('RiskManager: weekly loss counter reset');
     }
   }
 

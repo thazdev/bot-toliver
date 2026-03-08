@@ -15,7 +15,7 @@ export class StrategyRegistry {
    */
   register(strategy: BaseStrategy): void {
     this.strategies.push(strategy);
-    logger.info('Strategy registered', {
+    logger.debug('Strategy registered', {
       name: strategy.name,
       version: strategy.version,
       description: strategy.description,

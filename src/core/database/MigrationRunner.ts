@@ -90,7 +90,7 @@ export class MigrationRunner {
         );
 
         count++;
-        logger.info('Migration applied', { file });
+        logger.debug('Migration applied', { file });
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         logger.error('Migration failed', { file, error: errorMsg });
@@ -99,9 +99,9 @@ export class MigrationRunner {
     }
 
     if (count === 0) {
-      logger.info('No pending migrations');
+      logger.debug('No pending migrations');
     } else {
-      logger.info('Migrations complete', { applied: count });
+      logger.debug('Migrations complete', { applied: count });
     }
 
     return count;

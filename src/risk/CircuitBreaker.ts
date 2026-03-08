@@ -69,6 +69,6 @@ export class CircuitBreaker {
    */
   reset(): void {
     this.tripped = false;
-    logger.info('CircuitBreaker reset');
+    logger.debug('CircuitBreaker reset');
   }
 }

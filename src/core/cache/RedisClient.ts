@@ -26,7 +26,7 @@ export class RedisClient {
     });
 
     this.client.on('connect', () => {
-      logger.info('Redis connected', { host: config.host, port: config.port });
+      logger.debug('Redis connected', { host: config.host, port: config.port });
     });
 
     this.client.on('error', (error: Error) => {
@@ -75,6 +75,6 @@ export class RedisClient {
   async disconnect(): Promise<void> {
     await this.client.quit();
     RedisClient.instance = null;
-    logger.info('Redis disconnected');
+    logger.debug('Redis disconnected');
   }
 }

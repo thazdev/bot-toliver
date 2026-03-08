@@ -40,7 +40,7 @@ export class SmartMoneyTracker {
 
     if (profile.smartScore >= this.config.tier2MinScore) {
       this.wallets.set(address, profile);
-      logger.info('SmartMoneyTracker: wallet registered', {
+      logger.debug('SmartMoneyTracker: wallet registered', {
         address: address.slice(0, 8),
         tier: profile.tier,
         score: profile.smartScore.toFixed(1),
@@ -149,7 +149,7 @@ export class SmartMoneyTracker {
     }
 
     if (tier1Count >= 3) {
-      logger.info('SmartMoneyTracker: 3+ tier-1 wallets buying — BOOST entry', {
+      logger.debug('SmartMoneyTracker: 3+ tier-1 wallets buying — BOOST entry', {
         token: context.tokenInfo.mintAddress,
         tier1Count,
       });
@@ -235,7 +235,7 @@ export class SmartMoneyTracker {
 
       if (profile.smartScore < this.config.tier2MinScore) {
         this.wallets.delete(address);
-        logger.info('SmartMoneyTracker: wallet removed (score decay)', {
+        logger.debug('SmartMoneyTracker: wallet removed (score decay)', {
           address: address.slice(0, 8),
           score: profile.smartScore.toFixed(1),
         });
@@ -246,7 +246,7 @@ export class SmartMoneyTracker {
       profile.lastScoreUpdate = Date.now();
     }
 
-    logger.info('SmartMoneyTracker: weekly refresh complete', {
+    logger.debug('SmartMoneyTracker: weekly refresh complete', {
       totalWallets: this.wallets.size,
       tier1: [...this.wallets.values()].filter(w => w.tier === 'tier1').length,
       tier2: [...this.wallets.values()].filter(w => w.tier === 'tier2').length,
@@ -273,7 +273,7 @@ export class SmartMoneyTracker {
       updated++;
     }
 
-    logger.info('SmartMoneyTracker: full score recalculation complete (Sharpe migration)', {
+    logger.debug('SmartMoneyTracker: full score recalculation complete (Sharpe migration)', {
       walletsUpdated: updated,
       totalWallets: this.wallets.size,
       tier1: [...this.wallets.values()].filter(w => w.tier === 'tier1').length,
@@ -295,7 +295,7 @@ export class SmartMoneyTracker {
     }
 
     if (candidate.successCount >= this.config.autoDiscoveryMinTokens) {
-      logger.info('SmartMoneyTracker: auto-discovered smart wallet', {
+      logger.debug('SmartMoneyTracker: auto-discovered smart wallet', {
         address: walletAddress.slice(0, 8),
         successCount: candidate.successCount,
       });

@@ -66,7 +66,7 @@ export class MomentumStrategy extends BaseStrategy {
       const confidence = Math.min(1.0, (momentumScore / 100) + 0.15);
       const sizeSol = this.tierConfig.entry.solSizeMax * confidence;
 
-      logger.info('MomentumStrategy: STRONG MOMENTUM BUY', {
+      logger.debug('MomentumStrategy: STRONG MOMENTUM BUY', {
         token: context.tokenInfo.mintAddress,
         volTrend: volTrend.toFixed(2),
         momentumScore: momentumScore.toFixed(1),

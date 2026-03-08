@@ -34,7 +34,7 @@ export class QueueManager {
       });
 
       this.queues.set(queueName as QueueName, queue);
-      logger.info('Queue initialized', { queueName });
+      logger.debug('Queue initialized', { queueName });
     }
   }
 
@@ -77,6 +77,6 @@ export class QueueManager {
     );
     await Promise.all(closePromises);
     this.queues.clear();
-    logger.info('All queues closed');
+    logger.debug('All queues closed');
   }
 }

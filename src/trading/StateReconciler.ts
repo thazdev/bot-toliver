@@ -55,7 +55,7 @@ export class StateReconciler {
       });
     }
 
-    logger.info('StateReconciler: reconciliation complete', {
+    logger.debug('StateReconciler: reconciliation complete', {
       totalChecked: summary.totalChecked,
       ok: summary.ok,
       closedExternally: summary.closedExternally,
@@ -81,7 +81,7 @@ export class StateReconciler {
     }
 
     if (positions.length === 0) {
-      logger.info('StateReconciler: no open/partial positions to reconcile');
+      logger.debug('StateReconciler: no open/partial positions to reconcile');
       return;
     }
 

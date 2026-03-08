@@ -26,7 +26,7 @@ export class TradingGuard {
   constructor() {
     this.circuitBreakerResetInterval = setInterval(() => {
       if (this.tokenFailures.size > 0) {
-        logger.info('TradingGuard: circuit breaker reset — clearing token failure counts', {
+        logger.debug('TradingGuard: circuit breaker reset — clearing token failure counts', {
           tokensCleared: this.tokenFailures.size,
         });
         this.tokenFailures.clear();
@@ -53,7 +53,7 @@ export class TradingGuard {
     if (halt) {
       logger.error('TradingGuard: EMERGENCY HALT ACTIVATED — no new entries allowed');
     } else {
-      logger.info('TradingGuard: emergency halt deactivated');
+      logger.debug('TradingGuard: emergency halt deactivated');
     }
   }
 
@@ -279,12 +279,12 @@ export class TradingGuard {
       permanent,
       expiresAt: permanent ? Infinity : Date.now() + (durationMs ?? 0),
     });
-    logger.info('TradingGuard: token blacklisted', { tokenMint, reason, permanent });
+    logger.debug('TradingGuard: token blacklisted', { tokenMint, reason, permanent });
   }
 
   recordStoppedOut(tokenMint: string): void {
     this.stoppedOutTokens.set(tokenMint, Date.now());
-    logger.info('TradingGuard: token stopped out — 24h cooldown', { tokenMint });
+    logger.debug('TradingGuard: token stopped out — 24h cooldown', { tokenMint });
   }
 
   blacklistDevWallet(devWallet: string, tokenMint: string): void {

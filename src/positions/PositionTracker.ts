@@ -61,7 +61,7 @@ export class PositionTracker {
         }
 
         if (pnl.pnlPercent >= position.takeProfit) {
-          logger.info('PositionTracker: take-profit triggered', {
+          logger.debug('PositionTracker: take-profit triggered', {
             positionId: position.id,
             tokenMint: position.tokenMint,
             pnlPercent: pnl.pnlPercent.toFixed(2),
@@ -99,7 +99,7 @@ export class PositionTracker {
    */
   start(): void {
     this.isRunning = true;
-    logger.info('PositionTracker started');
+    logger.debug('PositionTracker started');
   }
 
   /**
@@ -107,6 +107,6 @@ export class PositionTracker {
    */
   stop(): void {
     this.isRunning = false;
-    logger.info('PositionTracker stopped');
+    logger.debug('PositionTracker stopped');
   }
 }

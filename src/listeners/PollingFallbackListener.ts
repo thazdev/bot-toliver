@@ -37,14 +37,12 @@ export class PollingFallbackListener extends BaseListener {
   async start(): Promise<void> {
     const enabled = /^(true|1|yes)$/i.test(String(process.env.POLLING_FALLBACK_ENABLED ?? '').trim());
     if (!enabled) {
-      logger.info('PollingFallbackListener: desativado. Ative com POLLING_FALLBACK_ENABLED=true');
-      console.log('[PollingFallback] Desativado — defina POLLING_FALLBACK_ENABLED=true no Railway (variáveis do BOT)');
+      logger.debug('PollingFallbackListener: desativado. Ative com POLLING_FALLBACK_ENABLED=true');
       return;
     }
 
     this.isActive = true;
-    console.log('[PollingFallback] ATIVO — detectando pools via polling a cada', POLL_INTERVAL_MS / 1000, 'segundos');
-    logger.info('PollingFallbackListener: INICIADO (fallback ativo)', {
+    logger.warn('PollingFallbackListener: INICIADO (fallback ativo)', {
       intervalMs: POLL_INTERVAL_MS,
       programs: ['Raydium AMM', 'PumpFun', 'Raydium CLMM'],
     });
@@ -136,7 +134,7 @@ export class PollingFallbackListener extends BaseListener {
             this.onEvent({ type: 'TOKEN_DETECTED', timestamp: blockTime * 1000, data: tokenData });
           }
 
-          logger.info('PollingFallbackListener: pool detectado via polling', {
+          logger.debug('PollingFallbackListener: pool detectado via polling', {
             source,
             tokenMint: discovered.tokenMint.slice(0, 8),
             signature: sig.signature.slice(0, 16),
@@ -148,7 +146,7 @@ export class PollingFallbackListener extends BaseListener {
       }
     }
 
-    logger.info('PollingFallbackListener: poll executado', { signaturesVerificadas: totalChecked });
+    logger.debug('PollingFallbackListener: poll executado', { signaturesVerificadas: totalChecked });
   }
 
   private parseLogs(logMessages: string[], programName: string): DiscoveredToken | null {

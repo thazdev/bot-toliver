@@ -30,7 +30,7 @@ export class ReconnectHandler {
     const jitter = Math.random() * exponentialDelay * 0.3;
     const totalDelay = Math.floor(exponentialDelay + jitter);
 
-    logger.info('WebSocket reconnect scheduled', {
+    logger.debug('WebSocket reconnect scheduled', {
       attempt: this.attempt + 1,
       delayMs: totalDelay,
     });

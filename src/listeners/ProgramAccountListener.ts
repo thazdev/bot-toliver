@@ -43,7 +43,7 @@ export class ProgramAccountListener extends BaseListener {
           'confirmed',
         );
         this.subscriptionIds.push(subId);
-        logger.info(`ProgramAccountListener subscribed to ${program.name}`, {
+        logger.debug(`ProgramAccountListener subscribed to ${program.name}`, {
           programId: program.id,
         });
       } catch (error: unknown) {

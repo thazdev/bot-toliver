@@ -138,7 +138,7 @@ export class TradeExecutor {
               routePlan: [] as unknown[],
             };
 
-      logger.info('DRY_RUN_BUY', {
+      logger.debug('DRY_RUN_BUY', {
         tokenMint: tradeRequest.tokenMint,
         amountSOL: finalSize,
         entryPrice,
@@ -250,7 +250,7 @@ export class TradeExecutor {
         },
       } satisfies AlertJobPayload);
 
-      logger.info('TradeExecutor: trade completed', {
+      logger.debug('TradeExecutor: trade completed', {
         txSignature: txResult.signature,
         direction: tradeRequest.direction,
         tokenMint: tradeRequest.tokenMint,

@@ -29,7 +29,7 @@ export class DatabaseClient {
       ? mysql.createPool(`${config.url}${config.url.includes('?') ? '&' : '?'}connectionLimit=${DB_POOL_SIZE}`)
       : mysql.createPool(poolOptions);
     const displayHost = config.url ? config.url.replace(/:[^:@]+@/, ':****@').replace(/\/\/[^/]+/, '//***').slice(0, 60) : config.host;
-    logger.info('DatabaseClient pool created', {
+    logger.debug('DatabaseClient pool created', {
       host: displayHost,
       database: config.database,
       poolSize: DB_POOL_SIZE,
@@ -108,7 +108,7 @@ export class DatabaseClient {
   async testConnection(): Promise<boolean> {
     try {
       await this.pool.execute('SELECT 1');
-      logger.info('Database connection test successful');
+      logger.debug('Database connection test successful');
       return true;
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -123,6 +123,6 @@ export class DatabaseClient {
   async disconnect(): Promise<void> {
     await this.pool.end();
     DatabaseClient.instance = null;
-    logger.info('Database pool closed');
+    logger.debug('Database pool closed');
   }
 }
