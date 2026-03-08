@@ -59,7 +59,10 @@ export function ActivityFeed() {
       <h3 className="mb-3 text-sm font-semibold text-slate-300">Atividade em Tempo Real</h3>
       <div className="flex-1 space-y-1 overflow-y-auto" style={{ maxHeight: 320 }}>
         {events.length === 0 && (
-          <p className="py-8 text-center text-xs text-slate-600">Aguardando eventos…</p>
+          <p className="py-8 text-center text-xs text-slate-600">
+            Aguardando eventos…<br />
+            <span className="text-[10px] text-slate-700">Trades e alertas aparecem aqui quando o bot executa.</span>
+          </p>
         )}
         {events.map((ev) => {
           const Icon = iconMap[ev.type] ?? Info;

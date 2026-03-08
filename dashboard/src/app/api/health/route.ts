@@ -39,9 +39,14 @@ export async function GET() {
       }
     })();
 
+    const statRecent = latestStat && latestStat.snapshotAt
+      ? (Date.now() - new Date(latestStat.snapshotAt).getTime()) < 30 * 60 * 1000
+      : false;
+    const inferredStatus = statRecent ? (dryRun ? 'DRY_RUN' : 'RUNNING') : 'UNKNOWN';
+
     return NextResponse.json({
-      status: dryRun ? 'DRY_RUN' : 'UNKNOWN',
-      lastHeartbeat: null,
+      status: inferredStatus,
+      lastHeartbeat: latestStat?.snapshotAt?.toISOString() ?? null,
       uptimeSeconds: latestStat ? Number(latestStat.uptimeSeconds) : 0,
     } satisfies BotHealth);
   } catch {
