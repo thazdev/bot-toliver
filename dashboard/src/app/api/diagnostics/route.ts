@@ -57,25 +57,29 @@ export async function GET() {
   }
 
   try {
-    await redis.connect();
+    if (redis.status !== 'ready' && redis.status !== 'connecting') {
+      await redis.connect();
+    }
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({
-      pipeline: {
-        tokens_received: 0,
-        stage1: { total: 0, reasons: {} },
-        stage2: { total: 0, reasons: {}, passed: 0 },
-        stage3_entries: 0,
-        stage4: 0,
-        stage5: 0,
-        stage6: 0,
-        passed: 0,
-      },
-      last_passed_tokens: [],
-      bot_health: null,
-      lastUpdated: new Date().toISOString(),
-      redisError: `Redis indisponível: ${errMsg}. Configure REDIS_URL ou REDIS_HOST/REDIS_PORT no dashboard.`,
-    } satisfies DiagnosticsResponse);
+    if (!errMsg.includes('already connecting') && !errMsg.includes('already connected')) {
+      return NextResponse.json({
+        pipeline: {
+          tokens_received: 0,
+          stage1: { total: 0, reasons: {} },
+          stage2: { total: 0, reasons: {}, passed: 0 },
+          stage3_entries: 0,
+          stage4: 0,
+          stage5: 0,
+          stage6: 0,
+          passed: 0,
+        },
+        last_passed_tokens: [],
+        bot_health: null,
+        lastUpdated: new Date().toISOString(),
+        redisError: `Redis indisponível: ${errMsg}. Configure REDIS_URL ou REDIS_HOST/REDIS_PORT no dashboard.`,
+      } satisfies DiagnosticsResponse);
+    }
   }
 
   const pipeline: DiagnosticsResponse['pipeline'] = {
