@@ -608,6 +608,10 @@ process.on('uncaughtException', (error: Error) => {
 
 main().catch((error: unknown) => {
   const errorMsg = error instanceof Error ? error.message : String(error);
-  logger.error('Fatal error during startup', { error: errorMsg });
+  const stack = error instanceof Error ? error.stack : undefined;
+  logger.error('Fatal error during startup', { error: errorMsg, stack });
+  // Garante que o erro sempre apareça no stdout (Railway/containers podem truncar JSON)
+  console.error('[FATAL]', errorMsg);
+  if (stack) console.error(stack);
   process.exit(1);
 });
