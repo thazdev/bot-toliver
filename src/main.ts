@@ -545,7 +545,7 @@ async function main(): Promise<void> {
             suggestedSizeSol: 0.05,
             triggerType: 'momentum_confirmation',
           };
-          logger.info('FORCED_BUY_SIGNAL', { tokenMint: context.tokenMint });
+          logger.info('FORCED_BUY_SIGNAL', { tokenMint });
         }
 
         // Salvar no Redis para diagnóstico: tokens que passaram o pipeline
