@@ -608,6 +608,7 @@ const AGGRESSIVE: TierConfig = {
     solSizeMax: 1.0,
     slippageTolerancePercent: 15,
     maxPriceGainFromLaunch: 1000,
+    minBuyTxLast60s: 1,
   },
   exit: {
     tp1: { sellPercent: 20, gainPercent: 100 },
@@ -690,7 +691,7 @@ const AGGRESSIVE: TierConfig = {
   smartMoney: SHARED_SMART_MONEY,
   whale: SHARED_WHALE,
   sentiment: SHARED_SENTIMENT,
-  filter: { ...SHARED_FILTER, minEntryScoreThreshold: 45 },
+  filter: { ...SHARED_FILTER, minEntryScoreThreshold: 45, deferTokenAgeSec: 5 },
 };
 
 const TIER_CONFIGS: Record<StrategyTier, TierConfig> = {

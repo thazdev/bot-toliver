@@ -324,14 +324,16 @@ export class EntryStrategy extends BaseStrategy {
   }
 
   private evaluateTypeB(ctx: StrategyContext): { pass: boolean; reason: string } {
-    if (ctx.poolInitialSol < 5) {
-      return { pass: false, reason: `Pool initial SOL ${ctx.poolInitialSol} < 5` };
+    const minPoolSol = this.tierConfig.launch.phase1MinPoolSol;
+    if (ctx.poolInitialSol < minPoolSol) {
+      return { pass: false, reason: `Pool initial SOL ${ctx.poolInitialSol} < ${minPoolSol}` };
     }
     if (ctx.safetyData.isBlacklisted) {
       return { pass: false, reason: 'Token is blacklisted' };
     }
-    if (ctx.holderData.holderCount < 5) {
-      return { pass: false, reason: `Holder count ${ctx.holderData.holderCount} < 5` };
+    const minHolders = this.tierConfig.entry.minHolderCount;
+    if (ctx.holderData.holderCount < minHolders) {
+      return { pass: false, reason: `Holder count ${ctx.holderData.holderCount} < ${minHolders}` };
     }
     return { pass: true, reason: 'Type B pool creation conditions met' };
   }

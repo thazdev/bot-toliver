@@ -288,7 +288,7 @@ async function main(): Promise<void> {
           holderGrowthRate: 0,
           holdersDecreasing: false,
         };
-        const buyTxHeuristic = fromApi && holderData.holderCount >= 2 ? 2 : 0;
+        const buyTxHeuristic = fromApi && holderData.holderCount >= 1 ? holderData.holderCount : 0;
         const defaultVolumeContext: VolumeContext = {
           volume1min: 0,
           volume5minAvg: 0,
@@ -399,7 +399,7 @@ async function main(): Promise<void> {
           uniqueBuyers5min: 0,
           buySellRatio5min: 0.5,
           liquidityStable: true,
-          tokenSource: 'unknown',
+          tokenSource: tokenInfo.source === 'pumpfun' ? 'pumpfun' : tokenInfo.source === 'raydium' || tokenInfo.source === 'raydium_clmm' ? 'raydium' : 'unknown',
           pumpfunMarketCap: 0,
           pumpfunGraduated: false,
           pumpfunCreationRatePerHour: 0,
@@ -492,11 +492,16 @@ async function main(): Promise<void> {
             logger.info('Trade blocked by risk manager', { reason: riskCheck.reason });
           }
         } else {
+          const skipReasons = results
+            .filter((r) => r.signal === 'skip' && r.reason)
+            .map((r) => r.reason)
+            .slice(0, 3);
           logger.info('Token passou no filtro mas sem sinal de compra', {
             tokenMint: tokenInfo.mintAddress.slice(0, 12),
             holders: holderData.holderCount,
             liquidity: pool.liquidity.toFixed(2),
             bestConfidence: buySignal?.confidence ?? 0,
+            skipReasons,
           });
         }
     }
