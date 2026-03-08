@@ -13,4 +13,8 @@ export interface TokenInfo {
   isMutable: boolean;
   hasFreezable: boolean;
   metadataUri: string;
+  /** Optional: set when token is detected from pool logs */
+  poolAddress?: string;
+  /** Optional: DEX where the pool was created */
+  dex?: 'pumpfun' | 'raydium';
 }

@@ -206,8 +206,8 @@ export class LogsListener extends BaseListener {
 
       const poolAddress = discovered.poolAddress ?? '';
       const tokenMint = discovered.tokenMint ?? '';
-      const dex = source === 'pumpfun' ? 'pumpfun' : 'raydium';
-      const poolData = {
+      const dex: 'pumpfun' | 'raydium' = source === 'pumpfun' ? 'pumpfun' : 'raydium';
+      const poolData: import('../types/pool.types.js').PoolInfo = {
         poolAddress,
         tokenMint,
         quoteMint: '',
@@ -220,26 +220,23 @@ export class LogsListener extends BaseListener {
       };
       this.onEvent({ type: 'POOL_CREATED', timestamp: blockTime * 1000, data: poolData });
       if (tokenMint) {
-        this.onEvent({
-          type: 'TOKEN_DETECTED',
-          timestamp: blockTime * 1000,
-          data: {
-            mintAddress: tokenMint,
-            poolAddress: poolAddress || undefined,
-            dex,
-            symbol: '',
-            name: '',
-            decimals: 0,
-            supply: '0',
-            createdAt: new Date(blockTime * 1000),
-            source,
-            initialLiquidity: discovered.initialLiquiditySOL ?? 0,
-            initialPrice: 0,
-            isMutable: false,
-            hasFreezable: false,
-            metadataUri: '',
-          },
-        });
+        const tokenData: import('../types/token.types.js').TokenInfo = {
+          mintAddress: tokenMint,
+          poolAddress: poolAddress || undefined,
+          dex,
+          symbol: '',
+          name: '',
+          decimals: 0,
+          supply: '0',
+          createdAt: new Date(blockTime * 1000),
+          source,
+          initialLiquidity: discovered.initialLiquiditySOL ?? 0,
+          initialPrice: 0,
+          isMutable: false,
+          hasFreezable: false,
+          metadataUri: '',
+        };
+        this.onEvent({ type: 'TOKEN_DETECTED', timestamp: blockTime * 1000, data: tokenData });
       }
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);

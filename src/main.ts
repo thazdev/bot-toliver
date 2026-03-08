@@ -372,9 +372,6 @@ async function main(): Promise<void> {
           });
         }
 
-        const results = await strategyRegistry.evaluateAll(context);
-        const buySignal = strategyRegistry.getBestBuySignal(results);
-
         if (buySignal && buySignal.confidence > 0) {
           const sizeSol = positionSizer.calculatePositionSize(buySignal.confidence);
           const baseSize = sizeSol > 0 ? sizeSol : buySignal.suggestedSizeSol;

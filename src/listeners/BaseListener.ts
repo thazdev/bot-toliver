@@ -38,28 +38,32 @@ export abstract class BaseListener {
   protected async onEvent(event: BotEvent): Promise<void> {
     try {
       switch (event.type) {
-        case 'TOKEN_DETECTED':
+        case 'TOKEN_DETECTED': {
+          const d = event.data;
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'token-detected', {
             tokenInfo: {
-              ...event.data,
-              poolAddress: event.data.poolAddress || undefined,
-              poolDex: event.data.dex === 'pumpfun' ? 'pumpfun' : 'raydium',
+              ...d,
+              poolAddress: d.poolAddress || undefined,
+              poolDex: d.dex === 'pumpfun' ? 'pumpfun' : 'raydium',
             },
             source: this.name,
             detectedAt: event.timestamp,
           } satisfies TokenScanJobPayload);
           break;
-        case 'POOL_CREATED':
+        }
+        case 'POOL_CREATED': {
+          const d = event.data as import('../types/pool.types.js').PoolInfo;
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'pool-created', {
             tokenInfo: {
-              mintAddress: event.data.tokenMint,
-              poolAddress: event.data.poolAddress || undefined,
-              poolDex: event.data.dex === 'pumpfun' ? 'pumpfun' : 'raydium',
+              mintAddress: d.tokenMint,
+              poolAddress: d.poolAddress || undefined,
+              poolDex: d.dex === 'pumpfun' ? 'pumpfun' : 'raydium',
             },
             source: this.name,
             detectedAt: event.timestamp,
           } satisfies TokenScanJobPayload);
           break;
+        }
         default:
           logger.debug('BaseListener: unhandled event type', { type: event.type, listener: this.name });
       }
