@@ -119,7 +119,8 @@ async function main(): Promise<void> {
 
   const raydiumClient = new RaydiumClient();
   const pumpFunClient = new PumpFunClient();
-  const poolScanner = new PoolScanner([raydiumClient, pumpFunClient]);
+  // PumpFun primeiro — maioria dos tokens novos é Pump.fun; evita Raydium desnecessário
+  const poolScanner = new PoolScanner([pumpFunClient, raydiumClient]);
   const tokenScanner = new TokenScanner(poolScanner);
 
   const priceMonitor = new PriceMonitor();
@@ -239,10 +240,13 @@ async function main(): Promise<void> {
       }
       statsTracker.incrementTokensScanned();
       const poolAddress = payload.tokenInfo.poolAddress?.trim();
-      logger.info('TOKEN_SCAN: token ok, buscando pool', { mint: tokenInfo.mintAddress.slice(0, 12) });
-      const pool = await poolScanner.scanForPool(tokenInfo.mintAddress, poolAddress
-        ? { poolAddress, dex: payload.tokenInfo.poolDex ?? 'pumpfun' }
-        : undefined);
+      const preferDex = payload.source === 'PumpFunListener' ? 'pumpfun' : undefined;
+      logger.info('TOKEN_SCAN: token ok, buscando pool', { mint: tokenInfo.mintAddress.slice(0, 12), source: payload.source });
+      const pool = await poolScanner.scanForPool(
+        tokenInfo.mintAddress,
+        poolAddress ? { poolAddress, dex: payload.tokenInfo.poolDex ?? 'pumpfun' } : undefined,
+        preferDex,
+      );
       logger.info('TOKEN_SCAN: pool scan concluído', {
         mint: tokenInfo.mintAddress.slice(0, 12),
         poolEncontrado: !!pool,
@@ -251,6 +255,7 @@ async function main(): Promise<void> {
         tokensPoolNotFound++;
         logger.info('TOKEN_SCAN: pool não encontrado', {
           mint: tokenInfo.mintAddress.slice(0, 12),
+          source: payload.source,
           poolAddress: poolAddress?.slice(0, 12),
         });
         return;

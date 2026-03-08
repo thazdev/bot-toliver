@@ -65,22 +65,7 @@ export class ProgramAccountListener extends BaseListener {
       account: accountAddress,
       dataLength,
     });
-
-    this.onEvent({
-      type: 'POOL_CREATED',
-      timestamp: Date.now(),
-      data: {
-        poolAddress: accountAddress,
-        tokenMint: '',
-        quoteMint: '',
-        dex: programName.includes('Raydium') ? 'raydium' : 'pumpfun',
-        liquidity: 0,
-        price: 0,
-        volume24h: 0,
-        createdAt: new Date(),
-        isActive: true,
-      },
-    });
+    // Não emite POOL_CREATED sem tokenMint — evita flood de "ignorado"
   }
 
   /**

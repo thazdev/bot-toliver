@@ -57,22 +57,7 @@ export class RaydiumPoolListener extends BaseListener {
 
     if (hasInitialize) {
       logger.info('Raydium pool initialization detected', { signature });
-
-      this.onEvent({
-        type: 'POOL_CREATED',
-        timestamp: Date.now(),
-        data: {
-          poolAddress: '',
-          tokenMint: '',
-          quoteMint: WSOL_MINT,
-          dex: 'raydium',
-          liquidity: 0,
-          price: 0,
-          volume24h: 0,
-          createdAt: new Date(),
-          isActive: true,
-        },
-      });
+      // Não emite sem tokenMint — LogsListener cobre com dados extraídos da tx
     }
 
     if (hasAddLiquidity) {

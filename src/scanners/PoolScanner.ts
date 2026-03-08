@@ -24,7 +24,11 @@ export class PoolScanner {
    * @param knownPool - Optional { poolAddress, dex } from logs — evita getProgramAccounts
    * @returns PoolInfo or null if no pool found
    */
-  async scanForPool(mintAddress: string, knownPool?: { poolAddress: string; dex: 'pumpfun' | 'raydium' }): Promise<PoolInfo | null> {
+  async scanForPool(
+    mintAddress: string,
+    knownPool?: { poolAddress: string; dex: 'pumpfun' | 'raydium' },
+    preferDex?: 'pumpfun' | 'raydium',
+  ): Promise<PoolInfo | null> {
     const cacheKey = CacheService.buildKey('pool', mintAddress);
     const cached = await this.cacheService.get<PoolInfo>(cacheKey);
     if (cached) {
@@ -45,7 +49,18 @@ export class PoolScanner {
       }
     }
 
-    for (const dex of this.dexClients) {
+    const dexes = this.dexClients;
+    const orderedDexes = preferDex
+      ? [...dexes].sort((a, b) => {
+          const aName = (a as { name: string }).name.toLowerCase();
+          const bName = (b as { name: string }).name.toLowerCase();
+          if (aName.includes(preferDex)) return -1;
+          if (bName.includes(preferDex)) return 1;
+          return 0;
+        })
+      : dexes;
+
+    for (const dex of orderedDexes) {
       try {
         const pool = await dex.getPool(mintAddress);
         if (pool) {
