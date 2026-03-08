@@ -54,6 +54,7 @@ export class TradeFilterPipeline {
   private knownRugDevs: Set<string> = new Set();
   private honeypotDb: Set<string> = new Set();
   private emergencyHalt: boolean = false;
+  private stage1ReasonLogged: Set<string> = new Set();
 
   constructor(tier: StrategyTier) {
     this.tier = tier;
@@ -86,19 +87,28 @@ export class TradeFilterPipeline {
       // Non-critical: diagnóstico
     }
 
-    if (this.emergencyHalt) {
+    if (process.env.SKIP_STAGE1_FOR_DEBUG === 'true') {
+      logger.info('STAGE1_SKIPPED_DEBUG');
+      steps.push({ step: 'hard_reject', passed: true, reason: 'SKIP_STAGE1_FOR_DEBUG', durationMs: 0 });
+      telemetry.stage1_result = 'skipped (debug)';
+    } else if (this.emergencyHalt) {
       const step = { step: 'emergency_halt', passed: false, reason: 'Emergency halt active via admin override', durationMs: 0 };
       steps.push(step);
       telemetry.stage1_result = `rejected: ${step.reason}`;
+      await this.logStage1Rejection(tokenMint, 'emergency_halt', step.reason);
       logger.info('PIPELINE_TELEMETRY', { telemetry });
       return await this.buildOutcome(tokenMint, steps, startMs, 0);
+    } else {
+      const step2 = this.step2HardReject(context);
+      steps.push(step2);
+      telemetry.stage1_result = step2.passed ? 'passed' : `rejected: ${step2.reason}`;
+      if (!step2.passed) {
+        const reasonCode = this.getStage1ReasonCode(step2.reason ?? '');
+        await this.logStage1Rejection(tokenMint, reasonCode, step2.reason ?? '');
+      }
+      logger.info('PIPELINE_TELEMETRY', { telemetry });
+      if (!step2.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
     }
-
-    const step2 = this.step2HardReject(context);
-    steps.push(step2);
-    telemetry.stage1_result = step2.passed ? 'passed' : `rejected: ${step2.reason}`;
-    logger.info('PIPELINE_TELEMETRY', { telemetry });
-    if (!step2.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
     const step3 = this.step3BasicViability(context);
     steps.push(step3);
@@ -381,6 +391,33 @@ export class TradeFilterPipeline {
       : 50;
 
     return (liquidityScore * 0.25) + (holderScore * 0.20) + (momentumScore * 0.20) + (safetyScore * 0.25) + (smartMoneyScore * 0.10);
+  }
+
+  private getStage1ReasonCode(reason: string): string {
+    if (reason.includes('Blacklisted address')) return 'blacklist';
+    if (reason.includes('Known rug dev')) return 'known_rug_dev';
+    if (reason.includes('Known honeypot')) return 'honeypot_db';
+    if (reason.includes('DEFERRED') || reason.includes('Token age')) return 'token_too_new';
+    if (reason.includes('Token is blacklisted')) return 'token_blacklisted';
+    if (reason.includes('Emergency halt')) return 'emergency_halt';
+    return 'outros';
+  }
+
+  private async logStage1Rejection(tokenMint: string, reasonCode: string, details: string): Promise<void> {
+    if (!this.stage1ReasonLogged.has(reasonCode)) {
+      this.stage1ReasonLogged.add(reasonCode);
+      logger.info('STAGE1_REJECT_REASON', {
+        tokenMint: tokenMint.slice(0, 12),
+        reason: reasonCode,
+        details,
+      });
+    }
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      await redis.incr(`diag:stage1_reject_${reasonCode}`);
+    } catch {
+      // ignora
+    }
   }
 
   private getDiagRedisKey(failedStep: FilterPipelineResult): string {

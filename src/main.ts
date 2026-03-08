@@ -755,6 +755,13 @@ async function main(): Promise<void> {
       const logsNoToken = parseInt((await redis.get('diag:logs_no_token_detected')) ?? '0', 10);
       const total = parseInt((await redis.get('diag:tokens_received_total')) ?? '0', 10);
       const stage1 = parseInt((await redis.get('diag:tokens_stage1_rejected')) ?? '0', 10);
+      const s1Blacklist = parseInt((await redis.get('diag:stage1_reject_blacklist')) ?? '0', 10);
+      const s1Honeypot = parseInt((await redis.get('diag:stage1_reject_honeypot_db')) ?? '0', 10);
+      const s1RugDev = parseInt((await redis.get('diag:stage1_reject_known_rug_dev')) ?? '0', 10);
+      const s1TokenNew = parseInt((await redis.get('diag:stage1_reject_token_too_new')) ?? '0', 10);
+      const s1Outros = parseInt((await redis.get('diag:stage1_reject_outros')) ?? '0', 10);
+      const s1TokenBlacklisted = parseInt((await redis.get('diag:stage1_reject_token_blacklisted')) ?? '0', 10);
+      const s1Emergency = parseInt((await redis.get('diag:stage1_reject_emergency_halt')) ?? '0', 10);
       const stage2 = parseInt((await redis.get('diag:tokens_stage2_rejected')) ?? '0', 10);
       const stage3 = parseInt((await redis.get('diag:tokens_stage3_rejected')) ?? '0', 10);
       const stage4 = parseInt((await redis.get('diag:tokens_stage4_rejected')) ?? '0', 10);
@@ -764,10 +771,8 @@ async function main(): Promise<void> {
 
       logger.info(
         `[DIAGNOSTICS] Logs sem token: ${logsNoToken} | Tokens recebidos total: ${total} | ` +
-          `Stage 1 (blacklist/honeypot): ${stage1} | Stage 2 (liquidez/authority): ${stage2} | ` +
-          `Stage 3 (rug score): ${stage3} | Stage 4 (holders/honeypot/entry): ${stage4} | ` +
-          `Stage 5 (market context): ${stage5} | Stage 6 (balance/sizing): ${stage6} | ` +
-          `Passaram todos os filtros: ${passed}`,
+          `Stage 1: ${stage1} (blacklist:${s1Blacklist} honeypot_db:${s1Honeypot} known_rug_dev:${s1RugDev} token_too_new:${s1TokenNew} token_blacklisted:${s1TokenBlacklisted} emergency:${s1Emergency} outros:${s1Outros}) | Stage 2: ${stage2} | ` +
+          `Stage 3: ${stage3} | Stage 4: ${stage4} | Stage 5: ${stage5} | Stage 6: ${stage6} | Passaram: ${passed}`,
       );
     } catch (err) {
       logger.debug('Diagnostics interval error', { err: String(err) });
