@@ -109,14 +109,25 @@ export default function SettingsPage() {
                 Wallet Address (Phantom)
               </label>
               <p className="mb-1.5 text-[11px] text-slate-500">
-                O saldo no header vem desta wallet. Cole o endereço da sua Phantom.
+                Phantom → Receber → Copiar endereço (43-44 caracteres). <strong className="text-danger">NÃO cole a chave privada.</strong>
               </p>
-              <input
-                type="text"
-                value={profile.walletAddress}
-                onChange={(e) => setProfile((p) => ({ ...p, walletAddress: e.target.value }))}
-                className="w-full rounded-xl border border-card-border bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-accent"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={profile.walletAddress}
+                  onChange={(e) => setProfile((p) => ({ ...p, walletAddress: e.target.value }))}
+                  className="flex-1 rounded-xl border border-card-border bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-accent"
+                  placeholder="Ex: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+                />
+                <a
+                  href="/api/wallet/info"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 rounded-xl border border-card-border bg-white/5 px-3 py-2.5 text-xs text-slate-400 hover:bg-white/10 hover:text-white"
+                >
+                  Verificar
+                </a>
+              </div>
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-400">

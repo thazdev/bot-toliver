@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const { session, error } = await requireAuth();
   if (error) return error;
 
-  let walletAddress = session!.user.walletAddress || dashboardConfig.bot.walletAddress;
+  let walletAddress = (session!.user.walletAddress || dashboardConfig.bot.walletAddress || '').trim();
 
   if (!walletAddress && session!.user.id) {
     try {
@@ -18,12 +18,19 @@ export async function GET(req: NextRequest) {
         where: { id: parseInt(session!.user.id, 10) },
         select: { walletAddress: true },
       });
-      walletAddress = user?.walletAddress || '';
+      walletAddress = (user?.walletAddress || '').trim();
     } catch {}
   }
 
   if (!walletAddress) {
-    return NextResponse.json({ sol: 0, usd: null });
+    return NextResponse.json({ sol: 0, usd: null }, { status: 500 });
+  }
+
+  if (walletAddress.length > 50) {
+    return NextResponse.json(
+      { sol: 0, usd: null, error: 'Wallet inválida (parece chave privada)' },
+      { status: 500 },
+    );
   }
 
   const skipCache = req.nextUrl.searchParams.get('nocache') === '1';
