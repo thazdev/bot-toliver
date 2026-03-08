@@ -123,33 +123,42 @@ export class MomentumStrategy extends BaseStrategy {
   }
 
   isWashTrading(context: StrategyContext): boolean {
-    const vol = context.volumeContext;
+    if (process.env.SKIP_WASH_TRADING_CHECK === 'true') {
+      return false;
+    }
 
-    if (vol.uniqueWalletsPerVolume < VOLUME_ANOMALY_RULES.minUniqueWalletsPerVolUnit) {
+    const vol = context.volumeContext;
+    const minWallets = parseInt(process.env.WASH_MIN_UNIQUE_WALLETS ?? '1', 10) || 1;
+    const minBuyRatio = parseFloat(process.env.WASH_MIN_BUY_RATIO ?? '0.15') || 0.15;
+    const maxBuyRatio = parseFloat(process.env.WASH_MAX_BUY_RATIO ?? '0.99') || 0.99;
+    const maxTimingScore = parseFloat(process.env.WASH_MAX_TIMING_SCORE ?? '0.99') || 0.99;
+
+    if (vol.uniqueWalletsPerVolume < minWallets) {
       logger.debug('MomentumStrategy: low unique wallets per volume — likely wash trading', {
         uniqueWallets: vol.uniqueWalletsPerVolume,
-        threshold: VOLUME_ANOMALY_RULES.minUniqueWalletsPerVolUnit,
+        threshold: minWallets,
       });
       return true;
     }
 
-    if (vol.tradeSizeStdDev < VOLUME_ANOMALY_RULES.tradeSizeVarianceMin && vol.avgTradeSize > 0) {
+    const allowUniformSizes = process.env.WASH_ALLOW_UNIFORM_SIZES === 'true';
+    if (!allowUniformSizes && vol.tradeSizeStdDev < VOLUME_ANOMALY_RULES.tradeSizeVarianceMin && vol.avgTradeSize > 0) {
       logger.debug('MomentumStrategy: uniform trade sizes — likely bot volume', {
         stdDev: vol.tradeSizeStdDev,
       });
       return true;
     }
 
-    if (vol.buyRatio < VOLUME_ANOMALY_RULES.minBuyRatio || vol.buyRatio > VOLUME_ANOMALY_RULES.maxBuyRatio) {
+    if (vol.buyRatio < minBuyRatio || vol.buyRatio > maxBuyRatio) {
       logger.debug('MomentumStrategy: buy ratio out of healthy range — likely manipulated', {
         buyRatio: vol.buyRatio,
-        min: VOLUME_ANOMALY_RULES.minBuyRatio,
-        max: VOLUME_ANOMALY_RULES.maxBuyRatio,
+        min: minBuyRatio,
+        max: maxBuyRatio,
       });
       return true;
     }
 
-    if (vol.tradeTimeDistributionScore > 0.8) {
+    if (vol.tradeTimeDistributionScore > maxTimingScore) {
       logger.debug('MomentumStrategy: trades too regularly spaced — automated wash');
       return true;
     }

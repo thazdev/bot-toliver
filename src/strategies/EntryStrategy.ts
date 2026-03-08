@@ -88,65 +88,97 @@ export class EntryStrategy extends BaseStrategy {
 
   private passesSignalStack(ctx: StrategyContext): boolean {
     const cfg = this.tierConfig.entry;
+    const tokenMint = ctx.tokenInfo.mintAddress.slice(0, 12);
+    const minLiq = parseFloat(process.env.MIN_LIQUIDITY_FOR_SIGNAL ?? '0.5') || 0.5;
+    const minBuys = parseInt(process.env.MIN_BUYS_LAST_60S ?? '1', 10) || 1;
 
-    if (ctx.liquidity < cfg.minLiquiditySol) {
-      logger.debug('EntryStrategy: liquidity below floor', {
-        liquidity: ctx.liquidity,
-        min: cfg.minLiquiditySol,
+    if (ctx.liquidity < minLiq) {
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'liquidity',
+        value: ctx.liquidity,
+        required: minLiq,
       });
       return false;
     }
 
     if (ctx.holderData.holderCount < cfg.minHolderCount) {
-      logger.debug('EntryStrategy: holder count below gate', {
-        holders: ctx.holderData.holderCount,
-        min: cfg.minHolderCount,
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'holderCount',
+        value: ctx.holderData.holderCount,
+        required: cfg.minHolderCount,
       });
       return false;
     }
 
     if (ctx.holderData.topHolderPercent > cfg.maxTopHolderPercent) {
-      logger.debug('EntryStrategy: top holder concentration too high', {
-        topHolder: ctx.holderData.topHolderPercent,
-        max: cfg.maxTopHolderPercent,
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'topHolderPercent',
+        value: ctx.holderData.topHolderPercent,
+        required: cfg.maxTopHolderPercent,
       });
       return false;
     }
 
     if (ctx.holderData.top5HolderPercent > cfg.maxTop5HolderPercent) {
-      logger.debug('EntryStrategy: top 5 holder concentration too high', {
-        top5: ctx.holderData.top5HolderPercent,
-        max: cfg.maxTop5HolderPercent,
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'top5HolderPercent',
+        value: ctx.holderData.top5HolderPercent,
+        required: cfg.maxTop5HolderPercent,
       });
       return false;
     }
 
     if (!ctx.safetyData.mintAuthorityDisabled) {
-      logger.debug('EntryStrategy: mint authority not disabled');
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'mintAuthorityDisabled',
+        value: false,
+        required: true,
+      });
       return false;
     }
 
     if (!ctx.safetyData.freezeAuthorityAbsent) {
-      logger.debug('EntryStrategy: freeze authority present');
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'freezeAuthorityAbsent',
+        value: false,
+        required: true,
+      });
       return false;
     }
 
-    const minBuys = cfg.minBuyTxLast60s ?? 2;
     if (ctx.volumeContext.buyTxLast60s < minBuys) {
-      logger.debug('EntryStrategy: insufficient buy volume', {
-        buys: ctx.volumeContext.buyTxLast60s,
-        min: minBuys,
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'buyTxLast60s',
+        value: ctx.volumeContext.buyTxLast60s,
+        required: minBuys,
       });
       return false;
     }
 
     if (ctx.safetyData.isBlacklisted) {
-      logger.debug('EntryStrategy: token/dev/LP is blacklisted');
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'isBlacklisted',
+        value: true,
+        required: false,
+      });
       return false;
     }
 
     if (ctx.safetyData.rugScore < 70) {
-      logger.debug('EntryStrategy: rug score below 70', { rugScore: ctx.safetyData.rugScore });
+      logger.info('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'rugScore',
+        value: ctx.safetyData.rugScore,
+        required: 70,
+      });
       return false;
     }
 

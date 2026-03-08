@@ -873,7 +873,7 @@ export const VOLUME_ANOMALY_RULES = {
 } as const;
 
 export const LAUNCH_PHASE_RULES = {
-  birthMaxSec: 60,
+  birthMaxSec: parseInt(process.env.BIRTH_MAX_SEC ?? '10', 10) || 10, // 0-10s bloqueado; 10-60s entra ignition (teste)
   ignitionMaxSec: 300,
   discoveryMaxSec: 900,
   momentumMaxSec: 3600,
