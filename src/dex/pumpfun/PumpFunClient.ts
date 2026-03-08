@@ -1,4 +1,4 @@
-import { PublicKey, type GetProgramAccountsFilter } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { BaseDex } from '../BaseDex.js';
 import { PumpFunParser } from './PumpFunParser.js';
 import { ConnectionManager } from '../../core/connection/ConnectionManager.js';
@@ -22,35 +22,38 @@ export class PumpFunClient extends BaseDex {
   }
 
   /**
+   * Deriva o PDA da bonding curve a partir do mint (evita getProgramAccounts = 10 créditos).
+   * Seeds: "bonding-curve" + mint bytes.
+   */
+  private deriveBondingCurveAddress(mintAddress: string): PublicKey {
+    const [pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('bonding-curve'), new PublicKey(mintAddress).toBuffer()],
+      new PublicKey(this.programId),
+    );
+    return pda;
+  }
+
+  /**
    * Fetches bonding curve pool info for a given token mint.
+   * Usa PDA derivada + getAccountInfo (1 crédito) em vez de getProgramAccounts (10 créditos).
    * @param mintAddress - The token mint address
    * @returns PoolInfo or null
    */
   async getPool(mintAddress: string): Promise<PoolInfo | null> {
     try {
+      const bondingCurveAddress = this.deriveBondingCurveAddress(mintAddress);
       const rateLimiter = this.connectionManager.getRateLimiter();
       const connection = this.connectionManager.getConnection();
-      const programPubkey = new PublicKey(this.programId);
 
-      const filters: GetProgramAccountsFilter[] = [
-        {
-          memcmp: {
-            offset: 40,
-            bytes: mintAddress,
-          },
-        },
-      ];
-
-      const accounts = await rateLimiter.schedule(() =>
-        connection.getProgramAccounts(programPubkey, { filters }),
+      const accountInfo = await rateLimiter.schedule(() =>
+        connection.getAccountInfo(bondingCurveAddress),
       );
 
-      if (accounts.length === 0) {
+      if (!accountInfo) {
         return null;
       }
 
-      const account = accounts[0];
-      const state = PumpFunParser.parse(account.account.data as Buffer);
+      const state = PumpFunParser.parse(accountInfo.data as Buffer);
       if (!state) {
         return null;
       }
@@ -59,7 +62,7 @@ export class PumpFunClient extends BaseDex {
       const liquidity = Number(state.virtualSolReserves) / 1_000_000_000;
 
       return {
-        poolAddress: account.pubkey.toBase58(),
+        poolAddress: bondingCurveAddress.toBase58(),
         tokenMint: state.tokenMint || mintAddress,
         quoteMint: WSOL_MINT,
         dex: 'pumpfun',
