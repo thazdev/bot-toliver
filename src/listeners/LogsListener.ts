@@ -22,6 +22,8 @@ interface DiscoveredToken {
 export class LogsListener extends BaseListener {
   private subscriptionIds: number[] = [];
   private connectionManager: ConnectionManager;
+  private logBatchCount = 0;
+  private lastLogInfoAt = 0;
 
   constructor(queueManager: QueueManager) {
     super('LogsListener', queueManager);
@@ -64,6 +66,15 @@ export class LogsListener extends BaseListener {
 
   private processLogs(programName: string, logs: Logs): void {
     BotHealthMonitor.recordEvent();
+    this.logBatchCount++;
+    const now = Date.now();
+    if (now - this.lastLogInfoAt > 60_000) {
+      logger.info('LogsListener: WebSocket recebendo logs', {
+        batchesReceived: this.logBatchCount,
+        program: programName,
+      });
+      this.lastLogInfoAt = now;
+    }
 
     try {
       const logMessages = logs.logs;

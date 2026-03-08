@@ -20,6 +20,7 @@ import { RaydiumPoolListener } from './listeners/RaydiumPoolListener.js';
 import { PumpFunListener } from './listeners/PumpFunListener.js';
 import { LiquidityListener } from './listeners/LiquidityListener.js';
 import { LargeTransactionListener } from './listeners/LargeTransactionListener.js';
+import { PollingFallbackListener } from './listeners/PollingFallbackListener.js';
 import type { BaseListener } from './listeners/BaseListener.js';
 
 import { RaydiumClient } from './dex/raydium/RaydiumClient.js';
@@ -514,11 +515,30 @@ async function main(): Promise<void> {
     new PumpFunListener(queueManager),
     new LiquidityListener(queueManager),
     new LargeTransactionListener(queueManager),
+    new PollingFallbackListener(queueManager),
   ];
 
   for (const listener of listeners) {
     await listener.start();
   }
+
+  // Verifica se WebSocket está recebendo dados (slot updates são frequentes)
+  const subConn = connectionManager.getSubscriptionConnection();
+  let slotReceived = false;
+  const slotSubId = subConn.onSlotChange(() => {
+    if (!slotReceived) {
+      slotReceived = true;
+      logger.info('WebSocket OK: recebendo dados da Solana (slot subscription ativa)');
+    }
+  });
+  setTimeout(() => {
+    subConn.removeSlotChangeListener(slotSubId);
+    if (!slotReceived) {
+      logger.warn('WebSocket aviso: nenhum slot recebido em 30s — subscriptions (onLogs) podem não funcionar. Verifique HELIUS_WS_URL e plano Helius.', {
+        hint: 'O @solana/web3.js onLogs tem bugs conhecidos. Considere Helius Enhanced Webhooks como alternativa.',
+      });
+    }
+  }, 30_000);
 
   positionTracker.start();
 
