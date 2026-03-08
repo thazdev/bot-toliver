@@ -14,6 +14,7 @@ export class PumpFunClient extends BaseDex {
   readonly name = 'PumpFun';
   readonly programId = PUMP_FUN_PROGRAM;
   private connectionManager: ConnectionManager;
+  private lastFetchPoolErrorAt = 0;
 
   constructor() {
     super();
@@ -70,7 +71,13 @@ export class PumpFunClient extends BaseDex {
       };
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('PumpFunClient: failed to fetch pool', { mintAddress, error: errorMsg });
+      const now = Date.now();
+      if (now - this.lastFetchPoolErrorAt > 30_000) {
+        this.lastFetchPoolErrorAt = now;
+        logger.warn('PumpFunClient: failed to fetch pool (throttled)', { mintAddress, error: errorMsg });
+      } else {
+        logger.debug('PumpFunClient: failed to fetch pool', { mintAddress, error: errorMsg });
+      }
       return null;
     }
   }

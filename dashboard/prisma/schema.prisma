@@ -7,6 +7,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Tabela usada pelo bot (MigrationRunner). Prisma não deve alterá-la.
+model SchemaMigration {
+  id        BigInt   @id @default(autoincrement())
+  filename  String   @unique @db.VarChar(255)
+  appliedAt DateTime? @default(now()) @map("applied_at")
+
+  @@map("schema_migrations")
+}
+
 model User {
   id            Int      @id @default(autoincrement())
   username      String   @unique @db.VarChar(64)
