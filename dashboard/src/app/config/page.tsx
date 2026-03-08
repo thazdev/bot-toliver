@@ -113,8 +113,9 @@ export default function ConfigPage() {
         headers: { 'Content-Type': 'application/json' },
       });
       if (!res.ok) throw new Error('Falha ao parar o bot');
-      await mutateHealth();
+      mutateHealth({ status: 'PAUSED', mode: health?.mode ?? 'dry-run', lastHeartbeat: null, uptimeSeconds: 0 }, false);
       showToast('success', 'Bot parado com sucesso');
+      setTimeout(() => mutateHealth(), 3000);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Erro ao parar bot');
     } finally {
@@ -130,8 +131,10 @@ export default function ConfigPage() {
         headers: { 'Content-Type': 'application/json' },
       });
       if (!res.ok) throw new Error('Falha ao iniciar o bot');
-      await mutateHealth();
+      const startStatus = (health?.mode ?? 'dry-run') === 'dry-run' ? 'DRY_RUN' : 'RUNNING';
+      mutateHealth({ status: startStatus as 'DRY_RUN' | 'RUNNING', mode: health?.mode ?? 'dry-run', lastHeartbeat: new Date().toISOString(), uptimeSeconds: 0 }, false);
       showToast('success', 'Bot iniciado com sucesso');
+      setTimeout(() => mutateHealth(), 3000);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Erro ao iniciar bot');
     } finally {

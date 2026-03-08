@@ -77,7 +77,7 @@ function KpiCard({
 
 export default function OverviewPage() {
   const { data: health } = useSWR<BotHealth>('/api/health', fetcher, {
-    refreshInterval: 5_000,
+    refreshInterval: 3_000,
   });
 
   const { data: stats } = useSWR<Stats>('/api/stats', fetcher, {
