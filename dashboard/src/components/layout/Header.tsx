@@ -14,7 +14,7 @@ export function Header() {
   const [cachedSol, setCachedSol] = useState<number | null>(null);
 
   const { data: health } = useSWR<BotHealth>('/api/health', fetcher, { refreshInterval: 15_000 });
-  const { data: balance, error: balanceError, isLoading } = useSWR<WalletBalance>(
+  const { data: balance, error: balanceError } = useSWR<WalletBalance>(
     '/api/wallet/balance',
     fetcher,
     {
@@ -26,13 +26,13 @@ export function Header() {
   );
 
   useEffect(() => {
-    if (balance?.sol != null) {
+    if (balance && !balanceError && balance.sol != null) {
       setCachedSol(balance.sol);
       try {
         sessionStorage.setItem(BALANCE_CACHE_KEY, String(balance.sol));
       } catch {}
     }
-  }, [balance?.sol]);
+  }, [balance, balanceError]);
 
   useEffect(() => {
     try {
@@ -64,8 +64,8 @@ export function Header() {
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-sm text-slate-400" title={session?.user?.walletAddress ? `Wallet: ${session.user.walletAddress}` : undefined}>
           <Wallet className="h-4 w-4 shrink-0" />
-          <span className="font-medium text-slate-200">
-            {balanceError ? 'Erro' : displaySol != null ? `${displaySol.toFixed(4)} SOL` : '—'}
+          <span className="font-medium text-slate-200" title={balanceError && displaySol != null ? 'Atualização falhou, mostrando valor em cache' : undefined}>
+            {displaySol != null ? `${displaySol.toFixed(4)} SOL` : balanceError ? 'Erro' : '—'}
           </span>
         </div>
         <div className="h-4 w-px bg-card-border" />

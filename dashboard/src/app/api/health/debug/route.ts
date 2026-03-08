@@ -13,7 +13,7 @@ export async function GET() {
 
   try {
     await redis.connect();
-    result.redis = { ...result.redis, connected: true };
+    (result.redis as Record<string, unknown>).connected = true;
 
     const botHealth = await redis.get('bot_health');
     (result.redis as Record<string, unknown>).botHealth = botHealth;

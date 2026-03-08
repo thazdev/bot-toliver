@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   const heliusUrl = dashboardConfig.rpc.heliusUrl;
   if (!heliusUrl) {
-    return NextResponse.json({ sol: 0, usd: null });
+    return NextResponse.json({ sol: 0, usd: null }, { status: 500 });
   }
 
   try {
@@ -77,6 +77,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(result);
   } catch {
-    return NextResponse.json({ sol: 0, usd: null });
+    return NextResponse.json({ sol: 0, usd: null }, { status: 500 });
   }
 }
