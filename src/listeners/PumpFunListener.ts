@@ -68,11 +68,20 @@ export class PumpFunListener extends BaseListener {
         logger.debug('Pump.fun token creation detected', { signature });
       }
 
+      let mintAddress = this.extractMintFromLogs(logMessages);
+      if (!mintAddress) {
+        mintAddress = await this.extractMintFromTransaction(signature);
+      }
+      if (!mintAddress || mintAddress.length < 32) {
+        logger.debug('PumpFunListener: não foi possível extrair mint da tx', { signature: signature.slice(0, 16) });
+        return;
+      }
+
       this.onEvent({
         type: 'TOKEN_DETECTED',
         timestamp: Date.now(),
         data: {
-          mintAddress: '',
+          mintAddress,
           symbol: '',
           name: '',
           decimals: 6,
@@ -90,6 +99,52 @@ export class PumpFunListener extends BaseListener {
 
     if (hasBuy) {
       logger.debug('Pump.fun buy detected', { signature });
+    }
+  }
+
+  /**
+   * Tenta extrair o mint dos logs (ex.: "mint: xxx" ou base58 em logs).
+   */
+  private extractMintFromLogs(logMessages: string[]): string {
+    for (const log of logMessages) {
+      const mintMatch = log.match(/mint[=:\s]+([A-Za-z0-9]{32,44})/i);
+      if (mintMatch) return mintMatch[1];
+    }
+    return '';
+  }
+
+  /**
+   * Extrai o mint da transação Pump.fun Create.
+   * O mint é o 7º account (índice 6) na instrução Create; fallback para último account.
+   */
+  private async extractMintFromTransaction(signature: string): Promise<string> {
+    try {
+      const connection = this.connectionManager.getConnection();
+      const rateLimiter = this.connectionManager.getRateLimiter();
+      const tx = await rateLimiter.schedule(() =>
+        connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 }),
+      );
+      if (!tx?.transaction?.message) return '';
+
+      const keys = tx.transaction.message.getAccountKeys?.();
+      const accountKeys = keys?.staticAccountKeys ?? keys ?? [];
+
+      const toBase58 = (k: unknown): string =>
+        typeof k === 'string' ? k : (k as { toBase58?: () => string })?.toBase58?.() ?? '';
+
+      const candidates = [
+        accountKeys[6],
+        accountKeys[7],
+        accountKeys[accountKeys.length - 1],
+      ].filter(Boolean);
+
+      for (const k of candidates) {
+        const mint = toBase58(k);
+        if (mint.length >= 32 && mint.length <= 44) return mint;
+      }
+      return '';
+    } catch {
+      return '';
     }
   }
 

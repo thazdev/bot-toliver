@@ -204,8 +204,13 @@ async function main(): Promise<void> {
   });
 
   let lastTokenScanDiagAt = 0;
+  let lastBotDisabledLogAt = 0;
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
     if (!(await isBotEnabled())) {
+      if (Date.now() - lastBotDisabledLogAt > 60_000) {
+        lastBotDisabledLogAt = Date.now();
+        logger.info('TOKEN_SCAN: bot desligado no dashboard — jobs ignorados');
+      }
       return;
     }
     BotHealthMonitor.recordEvent();
@@ -244,6 +249,13 @@ async function main(): Promise<void> {
       }
       return;
     }
+
+    logger.info('TOKEN_SCAN: token no pipeline', {
+      mint: tokenInfo.mintAddress.slice(0, 12),
+      liquidity: pool.liquidity.toFixed(2),
+      source: payload.source,
+    });
+
     {
         const tokenAgeSec = (Date.now() - tokenInfo.createdAt.getTime()) / 1000;
         const { holderData: fetchedHolderData, fromApi } = await holderVolumeFetcher.fetchHolderData(tokenInfo.mintAddress);

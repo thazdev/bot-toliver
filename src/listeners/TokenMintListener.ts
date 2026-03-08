@@ -68,11 +68,17 @@ export class TokenMintListener extends BaseListener {
       logger.debug('New token mint detected', { signature });
     }
 
+    const mintAddress = await this.extractMintFromTransaction(signature);
+    if (!mintAddress || mintAddress.length < 32) {
+      logger.debug('TokenMintListener: não foi possível extrair mint da tx', { signature: signature.slice(0, 16) });
+      return;
+    }
+
     this.onEvent({
       type: 'TOKEN_DETECTED',
       timestamp: Date.now(),
       data: {
-        mintAddress: '',
+        mintAddress,
         symbol: '',
         name: '',
         decimals: 0,
@@ -86,6 +92,37 @@ export class TokenMintListener extends BaseListener {
         metadataUri: '',
       },
     });
+  }
+
+  /**
+   * Extrai o mint da transação InitializeMint.
+   * O mint é tipicamente o 1º ou 2º account na mensagem.
+   */
+  private async extractMintFromTransaction(signature: string): Promise<string> {
+    try {
+      const connection = this.connectionManager.getConnection();
+      const rateLimiter = this.connectionManager.getRateLimiter();
+      const tx = await rateLimiter.schedule(() =>
+        connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 }),
+      );
+      if (!tx?.transaction?.message) return '';
+
+      const keys = tx.transaction.message.getAccountKeys?.();
+      const accountKeys = keys?.staticAccountKeys ?? keys ?? [];
+
+      const toBase58 = (k: unknown): string =>
+        typeof k === 'string' ? k : (k as { toBase58?: () => string })?.toBase58?.() ?? '';
+
+      // InitializeMint: mint é geralmente account 1 (0 = fee payer) ou 0
+      const candidates = [accountKeys[1], accountKeys[0]].filter(Boolean);
+      for (const k of candidates) {
+        const mint = toBase58(k);
+        if (mint.length >= 32 && mint.length <= 44) return mint;
+      }
+      return '';
+    } catch {
+      return '';
+    }
   }
 
   /**

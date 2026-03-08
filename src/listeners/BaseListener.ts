@@ -44,6 +44,10 @@ export abstract class BaseListener {
       switch (event.type) {
         case 'TOKEN_DETECTED': {
           const d = event.data;
+          if (!d.mintAddress || d.mintAddress.length < 32) {
+            logger.debug('BaseListener: ignorando TOKEN_DETECTED sem mint válido');
+            break;
+          }
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'token-detected', {
             tokenInfo: {
               ...d,
