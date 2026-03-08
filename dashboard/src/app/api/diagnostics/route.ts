@@ -45,6 +45,8 @@ export interface DiagnosticsResponse {
   }>;
   bot_health: Record<string, unknown> | null;
   lastUpdated: string;
+  /** Quando Redis está indisponível */
+  redisError?: string;
 }
 
 export async function GET() {
@@ -57,10 +59,23 @@ export async function GET() {
   try {
     await redis.connect();
   } catch (e) {
-    return NextResponse.json(
-      { error: 'Redis connect failed', detail: String(e) },
-      { status: 503 }
-    );
+    const errMsg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({
+      pipeline: {
+        tokens_received: 0,
+        stage1: { total: 0, reasons: {} },
+        stage2: { total: 0, reasons: {}, passed: 0 },
+        stage3_entries: 0,
+        stage4: 0,
+        stage5: 0,
+        stage6: 0,
+        passed: 0,
+      },
+      last_passed_tokens: [],
+      bot_health: null,
+      lastUpdated: new Date().toISOString(),
+      redisError: `Redis indisponível: ${errMsg}. Configure REDIS_URL ou REDIS_HOST/REDIS_PORT no dashboard.`,
+    } satisfies DiagnosticsResponse);
   }
 
   const pipeline: DiagnosticsResponse['pipeline'] = {

@@ -234,8 +234,15 @@ export default function DiagnosticsPage() {
 
       {error && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-          <XCircle className="h-5 w-5" />
+          <XCircle className="h-5 w-5 shrink-0" />
           Erro ao carregar: {error.message}
+        </div>
+      )}
+
+      {data?.redisError && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          {data.redisError}
         </div>
       )}
 
