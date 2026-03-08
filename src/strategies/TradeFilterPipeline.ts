@@ -232,6 +232,27 @@ export class TradeFilterPipeline {
   ): { adjustedScore: number; step?: FilterPipelineResult } {
     let adjustedScore = score;
 
+    // Bypass: liquidez alta + segurança básica — permite LaunchStrategy Phase 1 / sniper early
+    const minLiquidityBypass = 12;
+    if (
+      context.liquidity >= minLiquidityBypass &&
+      context.holderData.holderCount >= 3 &&
+      context.safetyData.rugScore >= 60 &&
+      context.safetyData.mintAuthorityDisabled &&
+      context.safetyData.freezeAuthorityAbsent
+    ) {
+      adjustedScore = Math.max(adjustedScore, this.filterConfig.minEntryScoreThreshold);
+      return {
+        adjustedScore,
+        step: {
+          step: 'override_liquidity_safety',
+          passed: true,
+          reason: `Liquidity ${context.liquidity.toFixed(1)} SOL, ${context.holderData.holderCount} holders — liquidity+safety bypass`,
+          durationMs: 0,
+        },
+      };
+    }
+
     if (context.smartMoneyData.tier1WalletsBuying >= this.filterConfig.smartMoneyOverrideMinWallets) {
       adjustedScore = Math.max(adjustedScore, this.filterConfig.minEntryScoreThreshold);
       return {
@@ -282,7 +303,10 @@ export class TradeFilterPipeline {
     const volumeRatio = context.volumeContext.volume5minAvg > 0
       ? context.volumeContext.volume1min / context.volumeContext.volume5minAvg
       : 0;
-    const momentumScore = Math.min(100, volumeRatio * 33);
+    // Quando volume não está disponível (0), usa score neutro 50 para não penalizar tokens novos
+    const momentumScore = context.volumeContext.volume5minAvg > 0
+      ? Math.min(100, volumeRatio * 33)
+      : 50;
 
     return (liquidityScore * 0.25) + (holderScore * 0.20) + (momentumScore * 0.20) + (safetyScore * 0.25) + (smartMoneyScore * 0.10);
   }

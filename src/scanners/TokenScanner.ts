@@ -25,26 +25,30 @@ export class TokenScanner {
     this.poolScanner = poolScanner;
   }
 
+  /** Motivo do skip quando processToken retorna null */
+  static readonly SKIP_CACHE = 'cache';
+  static readonly SKIP_NO_MINT = 'no_mint';
+  static readonly SKIP_ACCOUNT_NOT_FOUND = 'account_not_found';
+  static readonly SKIP_ERROR = 'error';
+
   /**
    * Processes a token scan job from the queue.
    * Deduplicates, fetches on-chain data, enriches, and persists.
    * @param payload - The token scan job payload
-   * @returns Enriched TokenInfo or null if skipped
+   * @returns { tokenInfo, skipReason } — tokenInfo quando ok, skipReason quando ignorado
    */
-  async processToken(payload: TokenScanJobPayload): Promise<TokenInfo | null> {
+  async processToken(payload: TokenScanJobPayload): Promise<{ tokenInfo: TokenInfo | null; skipReason?: string }> {
     const mintAddress = payload.tokenInfo.mintAddress;
 
     if (!mintAddress) {
-      logger.debug('TokenScanner: no mint address in payload, skipping');
-      return null;
+      return { tokenInfo: null, skipReason: TokenScanner.SKIP_NO_MINT };
     }
 
     try {
       const cacheKey = CacheService.buildKey('token', mintAddress);
       const cached = await this.cacheService.exists(cacheKey);
       if (cached) {
-        logger.debug('TokenScanner: token already processed', { mintAddress });
-        return null;
+        return { tokenInfo: null, skipReason: TokenScanner.SKIP_CACHE };
       }
 
       const rateLimiter = this.connectionManager.getRateLimiter();
@@ -56,8 +60,7 @@ export class TokenScanner {
       );
 
       if (!accountInfo) {
-        logger.warn('TokenScanner: mint account not found', { mintAddress });
-        return null;
+        return { tokenInfo: null, skipReason: TokenScanner.SKIP_ACCOUNT_NOT_FOUND };
       }
 
       const data = accountInfo.data;
@@ -105,14 +108,14 @@ export class TokenScanner {
         hasPool: !!poolInfo,
       });
 
-      return tokenInfo;
+      return { tokenInfo };
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error('TokenScanner: failed to process token', {
         mintAddress,
         error: errorMsg,
       });
-      return null;
+      return { tokenInfo: null, skipReason: TokenScanner.SKIP_ERROR };
     }
   }
 

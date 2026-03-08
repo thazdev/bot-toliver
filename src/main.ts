@@ -210,12 +210,18 @@ async function main(): Promise<void> {
     }
     BotHealthMonitor.recordEvent();
     const payload = job.data as TokenScanJobPayload;
-    const tokenInfo = await tokenScanner.processToken(payload);
+    const { tokenInfo, skipReason } = await tokenScanner.processToken(payload);
     if (!tokenInfo) {
       const now = Date.now();
       if (now - lastTokenScanDiagAt > 30_000) {
         lastTokenScanDiagAt = now;
-        logger.info('TOKEN_SCAN: token ignorado (cache ou mint não encontrado)', {
+        const reasonMsg = skipReason === 'cache' ? 'já em cache (duplicado)'
+          : skipReason === 'no_mint' ? 'mint vazio no payload'
+          : skipReason === 'account_not_found' ? 'conta mint não encontrada na chain'
+          : skipReason === 'error' ? 'erro ao processar'
+          : 'desconhecido';
+        logger.info('TOKEN_SCAN: token ignorado', {
+          motivo: reasonMsg,
           mint: payload.tokenInfo.mintAddress?.slice(0, 12) ?? 'vazio',
           source: payload.source,
         });
