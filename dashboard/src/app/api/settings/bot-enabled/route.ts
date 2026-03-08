@@ -15,6 +15,10 @@ export async function POST(req: Request) {
     await redis.connect().catch(() => {});
     await redis.set(BOT_ENABLED_KEY, value);
 
+    // Publica comando para reação instantânea via pub/sub
+    const command = value === 'true' ? 'start' : 'stop';
+    await redis.publish('bot:command', command).catch(() => {});
+
     return NextResponse.json({ enabled: value === 'true' });
   } catch (e) {
     return NextResponse.json({ error: 'Erro ao atualizar' }, { status: 500 });

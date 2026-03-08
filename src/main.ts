@@ -50,8 +50,9 @@ import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
 import { getTierConfig, shouldRelaxFiltersForDryRun } from './strategies/config.js';
 import { getEffectiveDryRun } from './config/DryRunResolver.js';
 import { getOpenPositionsTotalSOL } from './services/DryRunPositionService.js';
-import { isBotEnabled, isBotEnabledNoCache } from './config/BotEnabledResolver.js';
+import { isBotEnabled } from './config/BotEnabledResolver.js';
 import { setConnectionsPaused } from './config/ConnectionsPausedResolver.js';
+import { BotLifecycle } from './core/BotLifecycle.js';
 import { AlertService } from './alerts/AlertService.js';
 import { StatsTracker } from './stats/StatsTracker.js';
 import { StatsSnapshot } from './stats/StatsSnapshot.js';
@@ -86,13 +87,30 @@ let connectionManager: ConnectionManager;
 let statsSnapshot: StatsSnapshot;
 let botHealthMonitor: BotHealthMonitor;
 let tradingGuard: TradingGuard;
-let connectionsPaused = false;
-let botEnabledWatcherInterval: ReturnType<typeof setInterval> | null = null;
 let diagnosticsInterval: ReturnType<typeof setInterval> | null = null;
+
+function startDiagnosticsInterval(): void {
+  if (diagnosticsInterval) return;
+  diagnosticsInterval = setInterval(async () => {
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      const [total, passed] = await Promise.all([
+        redis.get('diag:tokens_received_total'),
+        redis.get('diag:tokens_passed'),
+      ]);
+      logger.debug('[DIAGNOSTICS]', {
+        tokensTotal: parseInt(total ?? '0', 10),
+        tokensPassed: parseInt(passed ?? '0', 10),
+      });
+    } catch (err) {
+      logger.debug('Diagnostics interval error', { err: String(err) });
+    }
+  }, 60_000);
+}
 
 /** PASSO 3: Teste de conectividade WebSocket isolado — escuta QUALQUER log na rede por 30s */
 async function testWebSocket(connection: Connection): Promise<void> {
-  logger.info('WS_TEST: Starting WebSocket connectivity test...');
+  logger.debug('WS_TEST: Starting WebSocket connectivity test...');
 
   let receivedAny = false;
 
@@ -101,7 +119,7 @@ async function testWebSocket(connection: Connection): Promise<void> {
     (logs: { signature: string; logs?: string[] }) => {
       if (!receivedAny) {
         receivedAny = true;
-        logger.info('WS_TEST: WebSocket is working — first log received', {
+        logger.debug('WS_TEST: WebSocket is working — first log received', {
           signature: logs.signature,
           program: logs.logs?.[0]?.substring(0, 50),
         });
@@ -118,19 +136,18 @@ async function testWebSocket(connection: Connection): Promise<void> {
     logger.error('Check: HELIUS_WS_URL is set correctly in .env');
     logger.error('Check: The URL starts with wss:// not https://');
   } else {
-    logger.info('WS_TEST PASSED: WebSocket connectivity confirmed');
+    logger.debug('WS_TEST PASSED: WebSocket connectivity confirmed');
   }
 }
 
 async function main(): Promise<void> {
   (globalThis as { __botStartTime?: number }).__botStartTime = Date.now();
-  logger.info(`Solana Trading Bot v${BOT_VERSION} starting...`);
+  logger.warn(`Solana Trading Bot v${BOT_VERSION} starting...`);
 
   const config = loadConfig();
-  logger.info('Configuration loaded', { dryRun: config.bot.dryRun, logLevel: config.bot.logLevel });
+  logger.debug('Configuration loaded', { dryRun: config.bot.dryRun, logLevel: config.bot.logLevel });
 
-  // PASSO 4: Verificação de variáveis de ambiente no boot
-  logger.info('ENV_CHECK', {
+  logger.debug('ENV_CHECK', {
     helius_rpc_set: !!process.env.HELIUS_RPC_URL,
     helius_ws_set: !!process.env.HELIUS_WS_URL,
     helius_ws_starts_with_wss: process.env.HELIUS_WS_URL?.startsWith('wss://'),
@@ -144,7 +161,7 @@ async function main(): Promise<void> {
     logger.warn('FILTER_RELAX_FOR_DRY_RUN ativo — filtros relaxados para permitir simulações em dry run');
   }
   if ((process.env.FORCE_VALIDATION_SIMULATION === 'true' || process.env.VALIDATION_SIMULATION === 'true') && config.bot.dryRun) {
-    logger.info('FORCE_VALIDATION_SIMULATION ativo — 1 simulação forçada a cada 5 min quando token passar no filtro');
+    logger.debug('FORCE_VALIDATION_SIMULATION ativo — 1 simulação forçada a cada 5 min quando token passar no filtro');
   }
 
   DatabaseClient.initialize(config.database);
@@ -191,7 +208,7 @@ async function main(): Promise<void> {
   queueManager = new QueueManager(queueConfig);
   await queueManager.initialize();
 
-  logger.info('ENV_CHECK', {
+  logger.debug('ENV_CHECK', {
     redis_connected: true,
     mysql_connected: true,
   });
@@ -274,7 +291,7 @@ async function main(): Promise<void> {
   botHealthMonitor = BotHealthMonitor.initialize(tradingGuard);
   botHealthMonitor.start();
 
-  logger.info('Strategies and analyzers initialized', {
+  logger.debug('Strategies and analyzers initialized', {
     tier,
     strategies: [entryStrategy.name, momentumStrategy.name, launchStrategy.name],
     modules: [
@@ -295,12 +312,12 @@ async function main(): Promise<void> {
   const forceValidationSimulation = process.env.FORCE_VALIDATION_SIMULATION === 'true' || process.env.VALIDATION_SIMULATION === 'true';
 
   workerManager.registerWorker(QueueName.TOKEN_SCAN, async (job) => {
-    logger.info('TOKEN_SCAN: job recebido', { jobId: job.id, jobName: job.name });
+    logger.debug('TOKEN_SCAN: job recebido', { jobId: job.id, jobName: job.name });
     try {
       if (!(await isBotEnabled())) {
         if (Date.now() - lastBotDisabledLogAt > 60_000) {
           lastBotDisabledLogAt = Date.now();
-          logger.info('TOKEN_SCAN: bot desligado no dashboard — jobs ignorados');
+          logger.debug('TOKEN_SCAN: bot desligado no dashboard — jobs ignorados');
         }
         return;
       }
@@ -314,7 +331,7 @@ async function main(): Promise<void> {
           : skipReason === 'account_not_found' ? 'conta mint não encontrada na chain'
           : skipReason === 'error' ? 'erro ao processar'
           : 'desconhecido';
-        logger.info('TOKEN_SCAN: token ignorado', {
+        logger.debug('TOKEN_SCAN: token ignorado', {
           motivo: reasonMsg,
           mint: payload.tokenInfo.mintAddress?.slice(0, 12) ?? 'vazio',
           source: payload.source,
@@ -324,19 +341,19 @@ async function main(): Promise<void> {
       statsTracker.incrementTokensScanned();
       const poolAddress = payload.tokenInfo.poolAddress?.trim();
       const preferDex = payload.tokenInfo.poolDex ?? (payload.source === 'PumpFunListener' ? 'pumpfun' : undefined);
-      logger.info('TOKEN_SCAN: token ok, buscando pool', { mint: tokenInfo.mintAddress.slice(0, 12), source: payload.source });
+      logger.debug('TOKEN_SCAN: token ok, buscando pool', { mint: tokenInfo.mintAddress.slice(0, 12), source: payload.source });
       const pool = await poolScanner.scanForPool(
         tokenInfo.mintAddress,
         poolAddress ? { poolAddress, dex: payload.tokenInfo.poolDex ?? 'pumpfun' } : undefined,
         preferDex,
       );
-      logger.info('TOKEN_SCAN: pool scan concluído', {
+      logger.debug('TOKEN_SCAN: pool scan concluído', {
         mint: tokenInfo.mintAddress.slice(0, 12),
         poolEncontrado: !!pool,
       });
       if (!pool) {
         tokensPoolNotFound++;
-        logger.info('TOKEN_SCAN: pool não encontrado', {
+        logger.debug('TOKEN_SCAN: pool não encontrado', {
           mint: tokenInfo.mintAddress.slice(0, 12),
           source: payload.source,
           poolAddress: poolAddress?.slice(0, 12),
@@ -348,14 +365,14 @@ async function main(): Promise<void> {
       const now = Date.now();
       if (now - lastPipelineSummaryAt > 30_000) {
         lastPipelineSummaryAt = now;
-        logger.info('TOKEN_SCAN: resumo pipeline', {
+        logger.debug('TOKEN_SCAN: resumo pipeline', {
           ignorados: tokensIgnored,
           poolNaoEncontrado: tokensPoolNotFound,
           noPipeline: tokensInPipeline,
         });
       }
 
-      logger.info('TOKEN_SCAN: token no pipeline', {
+      logger.debug('TOKEN_SCAN: token no pipeline', {
       mint: tokenInfo.mintAddress.slice(0, 12),
       liquidity: pool.liquidity.toFixed(2),
       source: payload.source,
@@ -506,7 +523,7 @@ async function main(): Promise<void> {
         const filterOutcome = await tradeFilterPipeline.runPipeline(context);
         if (!filterOutcome.passed) {
           const failedStep = filterOutcome.steps.find((s) => !s.passed);
-          logger.info('Token rejeitado pelo filtro', {
+          logger.debug('Token rejeitado pelo filtro', {
             token: tokenInfo.mintAddress.slice(0, 12),
             step: failedStep?.step ?? 'unknown',
             reason: filterOutcome.rejectionReason,
@@ -529,7 +546,7 @@ async function main(): Promise<void> {
         const isDebugToken = debugToken !== null && tokenMint === debugToken;
 
         if (isDebugToken) {
-          logger.info('DEBUG_TRACE: PIPELINE_PASSED', {
+          logger.debug('DEBUG_TRACE: PIPELINE_PASSED', {
             tokenMint: tokenMint.slice(0, 12),
             entryScore: filterOutcome.finalEntryScore,
           });
@@ -547,7 +564,7 @@ async function main(): Promise<void> {
             suggestedSizeSol: 0.05,
             triggerType: 'momentum_confirmation',
           };
-          logger.info('FORCED_BUY_SIGNAL', { tokenMint });
+          logger.debug('FORCED_BUY_SIGNAL', { tokenMint });
         }
 
         // Salvar no Redis para diagnóstico: tokens que passaram o pipeline
@@ -571,7 +588,7 @@ async function main(): Promise<void> {
         } catch (_) {}
 
         if (isDebugToken) {
-          logger.info('DEBUG_TRACE: STRATEGY_SIGNAL', {
+          logger.debug('DEBUG_TRACE: STRATEGY_SIGNAL', {
             tokenMint: tokenMint.slice(0, 12),
             hasBuySignal: buySignal !== null,
             confidence: buySignal?.confidence ?? 0,
@@ -582,7 +599,7 @@ async function main(): Promise<void> {
         const guardStatus = tradingGuard.evaluateToken(tokenInfo.mintAddress, context);
 
         if (isDebugToken) {
-          logger.info('DEBUG_TRACE: GUARD_RESULT', {
+          logger.debug('DEBUG_TRACE: GUARD_RESULT', {
             tokenMint: tokenMint.slice(0, 12),
             canTrade: guardStatus.canTrade,
             reason: guardStatus.reason ?? 'ok',
@@ -590,18 +607,12 @@ async function main(): Promise<void> {
         }
         if (!guardStatus.canTrade) {
           const blockReason = guardStatus.reason?.trim() || 'TradingGuard_blocked';
-          logger.warn('RAW_BLOCK_DEBUG', {
+          logger.debug('RAW_BLOCK_DEBUG', {
             tokenMint,
             source: 'TradingGuard',
             guardStatusRaw: JSON.stringify(guardStatus),
-            positionSizerRaw: JSON.stringify({ hasBuySignal: buySignal !== null, confidence: buySignal?.confidence }),
-            balanceRaw: exposureTracker.getAvailableCapital(),
-            isDryRun: config.bot.dryRun,
-            openPositions: positionManager.getOpenPositions().length,
-            dailyLoss: context.dailyLossPercent,
-            consecutiveLosses: context.consecutiveLosses,
           });
-          logger.info('TRADE_BLOCKED_REASON', {
+          logger.debug('TRADE_BLOCKED_REASON', {
             tokenMint,
             source: 'TradingGuard',
             reason: blockReason,
@@ -627,7 +638,7 @@ async function main(): Promise<void> {
             }
           } catch (_) {}
           if (isDebugToken) {
-            logger.info('=== FULL_TRACE_TOKEN ===', {
+            logger.debug('=== FULL_TRACE_TOKEN ===', {
               tokenMint: tokenMint.slice(0, 12),
               pipeline: 'PASSED',
               hasBuySignal: buySignal !== null,
@@ -635,9 +646,8 @@ async function main(): Promise<void> {
               guardReason: guardStatus.reason,
               executingTrade: false,
             });
-            logger.info('=== END_TRACE ===');
           }
-          logger.info('TradingGuard blocked trade', {
+          logger.debug('TradingGuard blocked trade', {
             token: tokenInfo.mintAddress,
             reason: guardStatus.reason,
           });
@@ -666,7 +676,7 @@ async function main(): Promise<void> {
           const minSize = dryRun ? MINIMUM_TRADE_SIZE_SOL : getTierConfig(config.trading.strategyTier).sizing.minPositionSol;
 
           if (isDebugToken) {
-            logger.info('DEBUG_TRACE: POSITION_SIZE', {
+            logger.debug('DEBUG_TRACE: POSITION_SIZE', {
               tokenMint: tokenMint.slice(0, 12),
               calculatedSize: sizeSol,
               minSize,
@@ -685,27 +695,20 @@ async function main(): Promise<void> {
 
           if (riskCheck.approved) {
             if (isDebugToken) {
-              logger.info('DEBUG_TRACE: EXECUTING_TRADE', {
+              logger.debug('DEBUG_TRACE: EXECUTING_TRADE', {
                 tokenMint: tokenMint.slice(0, 12),
                 dryRun,
                 amountSOL: finalSize,
               });
-              logger.info('=== FULL_TRACE_TOKEN ===', {
+              logger.debug('=== FULL_TRACE_TOKEN ===', {
                 tokenMint: tokenMint.slice(0, 12),
                 pipeline: 'PASSED',
                 hasBuySignal: true,
-                buySignalConfidence: buySignal.confidence,
-                guardCanTrade: guardStatus.canTrade,
-                guardReason: guardStatus.reason ?? 'ok',
-                positionSize: sizeSol,
-                positionBlocked: sizeSol < minSize,
                 riskApproved: riskCheck.approved,
-                riskReason: riskCheck.reason,
                 executingTrade: true,
               });
-              logger.info('=== END_TRACE ===');
             }
-            logger.info('Trade aprovado — enfileirando compra', {
+            logger.warn('Trade aprovado — enfileirando compra', {
               tokenMint: tokenInfo.mintAddress.slice(0, 12),
               amountSol: finalSize.toFixed(4),
               dryRun,
@@ -742,18 +745,12 @@ async function main(): Promise<void> {
               dailyLoss: context.dailyLossPercent,
               consecutiveLosses: context.consecutiveLosses,
             });
-            logger.info('TRADE_BLOCKED_REASON', {
-              tokenMint,
-              riskApproved: riskCheck.approved,
-              riskReason: blockReason,
-              positionSize: sizeSol,
-              positionBlocked: sizeSol < minSize,
-              hotWalletBalance: availableCapital,
-              totalExposure,
-              openPositionsCount: openPositions.length,
-              maxOpenPositions: maxPositions,
-              dryRun,
-            });
+            logger.debug('TRADE_BLOCKED_REASON', {
+            tokenMint,
+            riskReason: blockReason,
+            positionSize: sizeSol,
+            dryRun,
+          });
             try {
               const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
               const updated = rawList.map((s) => {
@@ -775,15 +772,11 @@ async function main(): Promise<void> {
               }
             } catch (_) {}
             if (isDebugToken) {
-              logger.info('=== FULL_TRACE_TOKEN ===', {
+              logger.debug('=== FULL_TRACE_TOKEN ===', {
                 tokenMint: tokenMint.slice(0, 12),
-                pipeline: 'PASSED',
-                hasBuySignal: true,
                 riskApproved: riskCheck.approved,
-                riskReason: riskCheck.reason,
                 executingTrade: false,
               });
-              logger.info('=== END_TRACE ===');
             }
             statsTracker.incrementTradesBlocked();
             logger.warn('TRADE_BLOCKED', { tokenMint, reason: blockReason });
@@ -812,31 +805,20 @@ async function main(): Promise<void> {
             }
           } catch (_) {}
           if (isDebugToken) {
-            logger.info('=== FULL_TRACE_TOKEN ===', {
+            logger.debug('=== FULL_TRACE_TOKEN ===', {
               tokenMint: tokenMint.slice(0, 12),
-              pipeline: 'PASSED',
               hasBuySignal: false,
-              buySignalConfidence: buySignal?.confidence ?? 0,
-              guardCanTrade: guardStatus.canTrade,
-              guardReason: guardStatus.reason ?? 'ok',
-              positionSize: undefined,
-              positionBlocked: undefined,
-              riskApproved: undefined,
-              riskReason: undefined,
               executingTrade: false,
             });
-            logger.info('=== END_TRACE ===');
           }
           const skipReasons = results
             .filter((r) => r.signal === 'skip' && r.reason)
             .map((r) => r.reason)
             .slice(0, 3);
-          logger.info('Token passou no filtro mas sem sinal de compra', {
+          logger.debug('Token passou no filtro mas sem sinal de compra', {
             tokenMint: tokenInfo.mintAddress.slice(0, 12),
             holders: holderData.holderCount,
             liquidity: pool.liquidity.toFixed(2),
-            bestConfidence: buySignal?.confidence ?? 0,
-            skipReasons,
           });
 
           // Modo validação: força 1 simulação a cada 5 min quando dry run + token passou no filtro
@@ -850,7 +832,7 @@ async function main(): Promise<void> {
           ) {
             lastValidationSimulationAt = Date.now();
             const validationSizeSol = Math.max(0.05, getTierConfig(config.trading.strategyTier).entry.solSizeMin);
-            logger.info('VALIDAÇÃO: forçando simulação de compra (dry run)', {
+            logger.debug('VALIDAÇÃO: forçando simulação de compra (dry run)', {
               tokenMint: tokenInfo.mintAddress.slice(0, 12),
               amountSol: validationSizeSol.toFixed(4),
             });
@@ -882,18 +864,7 @@ async function main(): Promise<void> {
 
     if (!riskCheck.approved) {
       const blockReason = riskCheck.reason?.trim() || 'riskcheck_returned_no_reason';
-      logger.warn('RAW_BLOCK_DEBUG', {
-        tokenMint: payload.tradeRequest.tokenMint,
-        source: 'TRADE_EXECUTE_worker',
-        riskCheckRaw: JSON.stringify(riskCheck),
-        positionSizerRaw: JSON.stringify({ amountSol: payload.tradeRequest.amountSol, strategyId: payload.tradeRequest.strategyId }),
-        balanceRaw: exposureTracker.getAvailableCapital(),
-        isDryRun: payload.tradeRequest.dryRun ?? config.bot.dryRun,
-        openPositions: positionManager.getOpenPositions().length,
-        dailyLoss: 'n/a',
-        consecutiveLosses: 'n/a',
-      });
-      logger.info('TRADE_BLOCKED_REASON', {
+      logger.debug('RAW_BLOCK_DEBUG', {
         tokenMint: payload.tradeRequest.tokenMint,
         source: 'TRADE_EXECUTE_worker',
         riskReason: blockReason,
@@ -1025,125 +996,103 @@ async function main(): Promise<void> {
     new PollingFallbackListener(queueManager),
   ];
 
-  const initiallyEnabled = await isBotEnabledNoCache();
+  // ── BotLifecycle: controle centralizado de start/stop ──
+  const lifecycle = BotLifecycle.getInstance();
+
+  lifecycle.onStop(async () => {
+    setConnectionsPaused(true);
+    for (const listener of listeners) {
+      await listener.stop();
+    }
+    connectionManager.stop();
+    connectionManager.disconnectSubscription();
+    if (webSocketManager) {
+      await webSocketManager.disconnect();
+    }
+    if (diagnosticsInterval) {
+      clearInterval(diagnosticsInterval);
+      diagnosticsInterval = null;
+    }
+    if (botHealthMonitor) {
+      botHealthMonitor.stop();
+    }
+    if (tradingGuard) {
+      tradingGuard.destroy();
+    }
+    stopDryRunPositionMonitor();
+    if (statsSnapshot) {
+      statsSnapshot.stop();
+    }
+    positionTracker.stop();
+  });
+
+  lifecycle.onStart(async () => {
+    setConnectionsPaused(false);
+    connectionManager.reconnectSubscription();
+    connectionManager.startHealthCheck();
+    await webSocketManager.connect();
+    for (const listener of listeners) {
+      await listener.start();
+    }
+    botHealthMonitor = BotHealthMonitor.initialize(tradingGuard);
+    botHealthMonitor.start();
+    positionTracker.start();
+    startDryRunPositionMonitor({ poolScanner });
+    statsSnapshot = new StatsSnapshot(statsTracker);
+    statsSnapshot.start();
+    startDiagnosticsInterval();
+  });
+
+  await lifecycle.startCommandListener();
+  lifecycle.startFallbackPolling();
+
+  const initiallyEnabled = await lifecycle.checkInitialState();
   if (initiallyEnabled) {
-    // PASSO 3: Teste de WebSocket antes de iniciar listeners
     await testWebSocket(connectionManager.getSubscriptionConnection());
 
     for (const listener of listeners) {
       await listener.start();
     }
+    setConnectionsPaused(false);
+
+    const subConn = connectionManager.getSubscriptionConnection();
+    let slotReceived = false;
+    const slotSubId = subConn.onSlotChange(() => {
+      if (!slotReceived) {
+        slotReceived = true;
+        logger.warn('WebSocket OK: recebendo dados da Solana (slot subscription ativa)');
+      }
+    });
+    setTimeout(() => {
+      subConn.removeSlotChangeListener(slotSubId);
+      if (!slotReceived) {
+        logger.warn('WebSocket aviso: nenhum slot recebido em 30s — subscriptions podem não funcionar');
+      }
+    }, 30_000);
+
+    positionTracker.start();
+    startDryRunPositionMonitor({ poolScanner });
+    statsSnapshot = new StatsSnapshot(statsTracker);
+    statsSnapshot.start();
+    startDiagnosticsInterval();
+
+    // Marca lifecycle como RUNNING (sem rodar callbacks de start duplicados)
+    (lifecycle as unknown as { state: string }).state = 'RUNNING';
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      await redis.setex('bot:lifecycle_state', 120, 'RUNNING');
+    } catch {}
   } else {
-    connectionsPaused = true;
     setConnectionsPaused(true);
     connectionManager.stop();
     connectionManager.disconnectSubscription();
     if (webSocketManager) {
       await webSocketManager.disconnect();
     }
-    logger.info('Bot iniciando desligado — conexões Helius pausadas');
+    logger.warn('Bot iniciando desligado — conexões Helius pausadas, estado STOPPED');
   }
 
-  // Verifica se WebSocket está recebendo dados (slot updates são frequentes) — só quando bot ligado
-  if (!connectionsPaused) {
-    const subConn = connectionManager.getSubscriptionConnection();
-    let slotReceived = false;
-    const slotSubId = subConn.onSlotChange(() => {
-      if (!slotReceived) {
-        slotReceived = true;
-        logger.info('WebSocket OK: recebendo dados da Solana (slot subscription ativa)');
-      }
-    });
-    setTimeout(() => {
-      subConn.removeSlotChangeListener(slotSubId);
-      if (!slotReceived) {
-        logger.warn('WebSocket aviso: nenhum slot recebido em 30s — subscriptions (onLogs) podem não funcionar. Verifique HELIUS_WS_URL e plano Helius.', {
-          hint: 'O @solana/web3.js onLogs tem bugs conhecidos. Considere Helius Enhanced Webhooks como alternativa.',
-        });
-      }
-    }, 30_000);
-  }
-
-  positionTracker.start();
-
-  startDryRunPositionMonitor({ poolScanner });
-
-  statsSnapshot = new StatsSnapshot(statsTracker);
-  statsSnapshot.start();
-
-  diagnosticsInterval = setInterval(async () => {
-    try {
-      const redis = RedisClient.getInstance().getClient();
-      const logsNoToken = parseInt((await redis.get('diag:logs_no_token_detected')) ?? '0', 10);
-      const total = parseInt((await redis.get('diag:tokens_received_total')) ?? '0', 10);
-      const stage1 = parseInt((await redis.get('diag:tokens_stage1_rejected')) ?? '0', 10);
-      const s1Blacklist = parseInt((await redis.get('diag:stage1_reject_blacklist')) ?? '0', 10);
-      const s1Honeypot = parseInt((await redis.get('diag:stage1_reject_honeypot_db')) ?? '0', 10);
-      const s1RugDev = parseInt((await redis.get('diag:stage1_reject_known_rug_dev')) ?? '0', 10);
-      const s1TokenNew = parseInt((await redis.get('diag:stage1_reject_token_too_new')) ?? '0', 10);
-      const s1Outros = parseInt((await redis.get('diag:stage1_reject_outros')) ?? '0', 10);
-      const s1Unknown = parseInt((await redis.get('diag:stage1_reject_unknown')) ?? '0', 10);
-      const s1TokenBlacklisted = parseInt((await redis.get('diag:stage1_reject_token_blacklisted')) ?? '0', 10);
-      const s1Emergency = parseInt((await redis.get('diag:stage1_reject_emergency_halt')) ?? '0', 10);
-      const stage2 = parseInt((await redis.get('diag:tokens_stage2_rejected')) ?? '0', 10);
-      const s2Liquidity = parseInt((await redis.get('diag:stage2_reject_liquidity_too_low')) ?? '0', 10);
-      const s2MintAuth = parseInt((await redis.get('diag:stage2_reject_mint_authority_active')) ?? '0', 10);
-      const s2FreezeAuth = parseInt((await redis.get('diag:stage2_reject_freeze_authority_set')) ?? '0', 10);
-      const s2RugScore = parseInt((await redis.get('diag:stage2_reject_rug_score_too_low')) ?? '0', 10);
-      const s2FetchFailed = parseInt((await redis.get('diag:stage2_reject_fetch_failed')) ?? '0', 10);
-      const s2Outros = parseInt((await redis.get('diag:stage2_reject_outros')) ?? '0', 10);
-      const stage2Passed = parseInt((await redis.get('diag:stage2_passed')) ?? '0', 10);
-      const stage3Entries = parseInt((await redis.get('diag:stage3_entries')) ?? '0', 10);
-      const stage3 = parseInt((await redis.get('diag:tokens_stage3_rejected')) ?? '0', 10);
-      const stage4 = parseInt((await redis.get('diag:tokens_stage4_rejected')) ?? '0', 10);
-      const stage5 = parseInt((await redis.get('diag:tokens_stage5_rejected')) ?? '0', 10);
-      const stage6 = parseInt((await redis.get('diag:tokens_stage6_rejected')) ?? '0', 10);
-      const passed = parseInt((await redis.get('diag:tokens_passed')) ?? '0', 10);
-
-      logger.info(
-        `[DIAGNOSTICS] Logs sem token: ${logsNoToken} | Tokens recebidos total: ${total} | ` +
-          `Stage 1: ${stage1} (blacklist:${s1Blacklist} honeypot_db:${s1Honeypot} known_rug_dev:${s1RugDev} token_too_new:${s1TokenNew} token_blacklisted:${s1TokenBlacklisted} emergency:${s1Emergency} outros:${s1Outros} unknown:${s1Unknown}) | ` +
-          `Stage 2: ${stage2} (liquidity:${s2Liquidity} mint_auth:${s2MintAuth} freeze_auth:${s2FreezeAuth} rug_score:${s2RugScore} fetch_failed:${s2FetchFailed} outros:${s2Outros}) s2_passed:${stage2Passed} s3_entries:${stage3Entries} | ` +
-          `Stage 3: ${stage3} | Stage 4: ${stage4} | Stage 5: ${stage5} | Stage 6: ${stage6} | Passaram: ${passed}`,
-      );
-    } catch (err) {
-      logger.debug('Diagnostics interval error', { err: String(err) });
-    }
-  }, 60_000);
-
-  // Watcher: quando bot desligado no dashboard, pausa conexões Helius (WebSocket + RPC)
-  botEnabledWatcherInterval = setInterval(async () => {
-    try {
-      const enabled = await isBotEnabledNoCache();
-      if (!enabled && !connectionsPaused) {
-        connectionsPaused = true;
-        setConnectionsPaused(true);
-        logger.info('Bot desligado — pausando conexões Helius (WebSocket + RPC)');
-        for (const listener of listeners) {
-          await listener.stop();
-        }
-        connectionManager.stop();
-        connectionManager.disconnectSubscription();
-        if (webSocketManager) {
-          await webSocketManager.disconnect();
-        }
-      } else if (enabled && connectionsPaused) {
-        connectionsPaused = false;
-        setConnectionsPaused(false);
-        logger.info('Bot ligado — retomando conexões Helius');
-        connectionManager.reconnectSubscription();
-        connectionManager.startHealthCheck();
-        await webSocketManager.connect();
-        for (const listener of listeners) {
-          await listener.start();
-        }
-      }
-    } catch (err) {
-      logger.debug('BotEnabledWatcher error', { err: String(err) });
-    }
-  }, 5000);
-
-  logger.info(`Bot iniciado — capital mode: SMALL (${config.trading.totalCapitalSol} SOL), reconciliação: ${reconciliation.totalChecked} posições verificadas`, {
+  logger.warn(`Bot iniciado — capital: ${config.trading.totalCapitalSol} SOL, reconciliação: ${reconciliation.totalChecked} posições verificadas`, {
     version: BOT_VERSION,
     timestamp: new Date().toISOString(),
     strategies: strategyRegistry.getStrategyCount(),
@@ -1161,35 +1110,19 @@ async function main(): Promise<void> {
 }
 
 async function shutdown(signal: string): Promise<void> {
-  logger.info(`Shutdown signal received: ${signal}`);
+  logger.warn(`Shutdown signal received: ${signal}`);
 
   try {
-    if (botEnabledWatcherInterval) {
-      clearInterval(botEnabledWatcherInterval);
-      botEnabledWatcherInterval = null;
+    const lifecycle = BotLifecycle.getInstance();
+    if (lifecycle.isRunning()) {
+      await lifecycle.stop();
     }
+    await lifecycle.destroy();
+
     if (diagnosticsInterval) {
       clearInterval(diagnosticsInterval);
       diagnosticsInterval = null;
     }
-
-    for (const listener of listeners) {
-      await listener.stop();
-    }
-
-    if (botHealthMonitor) {
-      botHealthMonitor.stop();
-    }
-
-    if (tradingGuard) {
-      tradingGuard.destroy();
-    }
-
-    if (statsSnapshot) {
-      statsSnapshot.stop();
-    }
-
-    stopDryRunPositionMonitor();
 
     if (workerManager) {
       await workerManager.shutdown();
@@ -1213,7 +1146,7 @@ async function shutdown(signal: string): Promise<void> {
     const db = DatabaseClient.getInstance();
     await db.disconnect();
 
-    logger.info('Graceful shutdown complete');
+    logger.warn('Graceful shutdown complete');
     process.exit(0);
   } catch (error: unknown) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1239,8 +1172,7 @@ main().catch((error: unknown) => {
   const errorMsg = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? error.stack : undefined;
   logger.error('Fatal error during startup', { error: errorMsg, stack });
-  // Garante que o erro sempre apareça no stdout (Railway/containers podem truncar JSON)
-  console.error('[FATAL]', errorMsg);
-  if (stack) console.error(stack);
+  process.stderr.write(`[FATAL] ${errorMsg}\n`);
+  if (stack) process.stderr.write(`${stack}\n`);
   process.exit(1);
 });
