@@ -587,7 +587,7 @@ async function main(): Promise<void> {
           });
         }
         if (!guardStatus.canTrade) {
-          const blockReason = guardStatus.reason ?? 'TradingGuard';
+          const blockReason = guardStatus.reason?.trim() || 'TradingGuard_blocked';
           logger.info('TRADE_BLOCKED_REASON', {
             tokenMint,
             source: 'TradingGuard',
@@ -707,6 +707,7 @@ async function main(): Promise<void> {
               entryScore: filterOutcome.finalEntryScore,
             } satisfies TradeExecuteJobPayload);
           } else {
+            const blockReason = riskCheck.reason?.trim() || 'riskcheck_returned_no_reason';
             const openPositions = positionManager.getOpenPositions();
             const maxPositions = getTierConfig(config.trading.strategyTier).sizing.maxConcurrentPositions;
             const availableCapital = exposureTracker.getAvailableCapital();
@@ -714,7 +715,7 @@ async function main(): Promise<void> {
             logger.info('TRADE_BLOCKED_REASON', {
               tokenMint,
               riskApproved: riskCheck.approved,
-              riskReason: riskCheck.reason,
+              riskReason: blockReason,
               positionSize: sizeSol,
               positionBlocked: sizeSol < minSize,
               hotWalletBalance: availableCapital,
@@ -724,7 +725,6 @@ async function main(): Promise<void> {
               dryRun,
             });
             try {
-              const blockReason = riskCheck.reason ?? 'unknown';
               const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
               const updated = rawList.map((s) => {
                 try {
@@ -756,7 +756,7 @@ async function main(): Promise<void> {
               logger.info('=== END_TRACE ===');
             }
             statsTracker.incrementTradesBlocked();
-            logger.info('Trade blocked by risk manager', { reason: riskCheck.reason });
+            logger.warn('TRADE_BLOCKED', { tokenMint, reason: blockReason });
           }
         } else {
           if (isDebugToken) {
@@ -829,7 +829,7 @@ async function main(): Promise<void> {
     const riskCheck = await riskManager.preTradeCheck(payload.tradeRequest);
 
     if (!riskCheck.approved) {
-      const blockReason = riskCheck.reason ?? 'unknown';
+      const blockReason = riskCheck.reason?.trim() || 'riskcheck_returned_no_reason';
       logger.info('TRADE_BLOCKED_REASON', {
         tokenMint: payload.tradeRequest.tokenMint,
         source: 'TRADE_EXECUTE_worker',
@@ -858,7 +858,7 @@ async function main(): Promise<void> {
         }
       } catch (_) {}
       statsTracker.incrementTradesBlocked();
-      logger.warn('Trade rejected by risk manager', { reason: riskCheck.reason });
+      logger.warn('TRADE_BLOCKED', { tokenMint: payload.tradeRequest.tokenMint, reason: blockReason });
       return;
     }
 

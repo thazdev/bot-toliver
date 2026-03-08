@@ -51,59 +51,65 @@ export class RiskManager {
   }
 
   async preTradeCheck(tradeRequest: TradeRequest): Promise<RiskCheckResult> {
-    const isDryRun = tradeRequest.dryRun || this.config.bot.dryRun;
-    if (isDryRun) {
-      return { approved: true, reason: 'DRY_RUN mode active — trade will be simulated' };
-    }
-
-    if (this.circuitBreaker.isTripped()) {
-      return { approved: false, reason: 'Circuit breaker is tripped — all trading halted' };
-    }
-
-    const breakerTripped = await this.circuitBreaker.check();
-    if (breakerTripped) {
-      return { approved: false, reason: 'Daily loss threshold exceeded — circuit breaker tripped' };
-    }
-
-    this.checkResets();
-
-    const riskCfg = this.tierConfig.risk;
-
-    const drawdownPercent = this.getCurrentDrawdownPercent();
-    if (drawdownPercent >= riskCfg.maxDrawdownPercent) {
-      return { approved: false, reason: `Max drawdown ${drawdownPercent.toFixed(2)}% ≥ ${riskCfg.maxDrawdownPercent}% — trading halted 24h` };
-    }
-
-    const weeklyLossPercent = (this.weeklyLoss / this.portfolioValueStart) * 100;
-    if (weeklyLossPercent >= riskCfg.maxWeeklyLossPercent) {
-      return { approved: false, reason: `Weekly loss ${weeklyLossPercent.toFixed(2)}% ≥ ${riskCfg.maxWeeklyLossPercent}% — full review required` };
-    }
-
-    const available = this.exposureTracker.getAvailableCapital();
-    if (available < riskCfg.emergencyHaltBalanceSol) {
-      return { approved: false, reason: `SOL balance ${available.toFixed(4)} below emergency halt threshold ${riskCfg.emergencyHaltBalanceSol}` };
-    }
-
-    const budgetCheck = this.checkDailyRiskBudget();
-    if (!budgetCheck.approved) {
-      return budgetCheck;
-    }
-
-    if (tradeRequest.direction === 'buy') {
-      const buyCheck = this.checkBuySpecific(tradeRequest);
-      if (!buyCheck.approved) {
-        return buyCheck;
+    try {
+      const isDryRun = tradeRequest.dryRun || this.config.bot.dryRun;
+      if (isDryRun) {
+        return { approved: true, reason: 'DRY_RUN mode active — trade will be simulated' };
       }
+
+      if (this.circuitBreaker.isTripped()) {
+        return { approved: false, reason: 'circuit_breaker_tripped' };
+      }
+
+      const breakerTripped = await this.circuitBreaker.check();
+      if (breakerTripped) {
+        return { approved: false, reason: 'daily_loss_exceeded' };
+      }
+
+      this.checkResets();
+
+      const riskCfg = this.tierConfig.risk;
+
+      const drawdownPercent = this.getCurrentDrawdownPercent();
+      if (drawdownPercent >= riskCfg.maxDrawdownPercent) {
+        return { approved: false, reason: `max_drawdown_reached: ${drawdownPercent.toFixed(2)}%` };
+      }
+
+      const weeklyLossPercent = (this.portfolioValueStart > 0 ? this.weeklyLoss / this.portfolioValueStart : 0) * 100;
+      if (weeklyLossPercent >= riskCfg.maxWeeklyLossPercent) {
+        return { approved: false, reason: `weekly_loss_exceeded: ${weeklyLossPercent.toFixed(2)}%` };
+      }
+
+      const available = this.exposureTracker.getAvailableCapital();
+      if (available < riskCfg.emergencyHaltBalanceSol) {
+        return { approved: false, reason: `hot_wallet_below_minimum: ${available.toFixed(4)} SOL` };
+      }
+
+      const budgetCheck = this.checkDailyRiskBudget();
+      if (!budgetCheck.approved) {
+        return { approved: false, reason: (budgetCheck.reason ?? 'daily_loss_exceeded').trim() || 'daily_loss_exceeded' };
+      }
+
+      if (tradeRequest.direction === 'buy') {
+        const buyCheck = this.checkBuySpecific(tradeRequest);
+        if (!buyCheck.approved) {
+          return { approved: false, reason: (buyCheck.reason ?? 'capital_not_approved').trim() || 'capital_not_approved' };
+        }
+      }
+
+      logger.debug('RiskManager: trade approved', {
+        tokenMint: tradeRequest.tokenMint,
+        direction: tradeRequest.direction,
+        amountSol: tradeRequest.amountSol,
+        regime: this.currentMarketRegime,
+      });
+
+      return { approved: true, reason: 'All risk checks passed' };
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('RISK_CHECK_ERROR', { error: errMsg, tokenMint: tradeRequest.tokenMint });
+      return { approved: false, reason: `risk_check_exception: ${errMsg}` };
     }
-
-    logger.debug('RiskManager: trade approved', {
-      tokenMint: tradeRequest.tokenMint,
-      direction: tradeRequest.direction,
-      amountSol: tradeRequest.amountSol,
-      regime: this.currentMarketRegime,
-    });
-
-    return { approved: true, reason: 'All risk checks passed' };
   }
 
   private checkBuySpecific(tradeRequest: TradeRequest): RiskCheckResult {
@@ -112,13 +118,13 @@ export class RiskManager {
     const openPositions = this.positionManager.getOpenPositions();
     const maxPositions = this.getMaxConcurrentPositions();
     if (openPositions.length >= maxPositions) {
-      return { approved: false, reason: `Max open positions reached: ${openPositions.length}/${maxPositions}` };
+      return { approved: false, reason: `max_positions_reached: ${openPositions.length}/${maxPositions}` };
     }
 
     const totalExposure = this.exposureTracker.getTotalExposure();
     const maxExposure = this.config.trading.totalCapitalSol * (riskCfg.maxExposurePercent / 100);
     if (totalExposure + tradeRequest.amountSol > maxExposure) {
-      return { approved: false, reason: `Total exposure ${(totalExposure + tradeRequest.amountSol).toFixed(4)} SOL would exceed max ${maxExposure.toFixed(4)} SOL (${riskCfg.maxExposurePercent}%)` };
+      return { approved: false, reason: `exposure_exceeded: ${(totalExposure + tradeRequest.amountSol).toFixed(4)} > ${maxExposure.toFixed(4)} SOL` };
     }
 
     const totalCapital = this.config.trading.totalCapitalSol;
@@ -139,7 +145,7 @@ export class RiskManager {
         isDryRun: this.config.bot.dryRun,
         tokenMint: tradeRequest.tokenMint.slice(0, 12),
       });
-      return { approved: false, reason: `Position size ${effectiveSize.toFixed(4)} SOL exceeds single token max ${maxSinglePosition.toFixed(4)} SOL (${maxSingleTokenPct}%)` };
+      return { approved: false, reason: `position_size_too_large: ${effectiveSize.toFixed(4)} > ${maxSinglePosition.toFixed(4)} SOL (${maxSingleTokenPct}%)` };
     }
 
     const availableCapital = this.exposureTracker.getAvailableCapital();
@@ -154,17 +160,17 @@ export class RiskManager {
         isDryRun: this.config.bot.dryRun,
         tokenMint: tradeRequest.tokenMint.slice(0, 12),
       });
-      return { approved: false, reason: `Insufficient capital after gas reserve: ${availableAfterGas.toFixed(4)} SOL available` };
+      return { approved: false, reason: `insufficient_balance: ${availableAfterGas.toFixed(4)} SOL after gas` };
     }
 
     if (this.positionManager.hasOpenPosition(tradeRequest.tokenMint)) {
-      return { approved: false, reason: `Already have an open position for ${tradeRequest.tokenMint}` };
+      return { approved: false, reason: `already_have_position: ${tradeRequest.tokenMint.slice(0, 8)}` };
     }
 
     const lastExit = this.lastExitTimestamps.get(tradeRequest.tokenMint);
     if (lastExit && Date.now() - lastExit < riskCfg.sameTradeCooldownMs) {
       const remaining = Math.ceil((riskCfg.sameTradeCooldownMs - (Date.now() - lastExit)) / 60_000);
-      return { approved: false, reason: `Token cooldown: ${remaining} min remaining` };
+      return { approved: false, reason: `token_cooldown: ${remaining} min remaining` };
     }
 
     const devWallet = this.devWalletMap.get(tradeRequest.tokenMint);
@@ -174,7 +180,7 @@ export class RiskManager {
         return pDev === devWallet;
       });
       if (correlatedPositions.length > 0) {
-        return { approved: false, reason: `Correlated token (same dev wallet ${devWallet.slice(0, 8)}…) already has open position` };
+        return { approved: false, reason: `same_dev_wallet_exists: ${devWallet.slice(0, 8)}` };
       }
     }
 
@@ -188,11 +194,11 @@ export class RiskManager {
     const riskCfg = this.tierConfig.risk;
 
     if (riskUsed >= riskCfg.emergencyExitAtRiskPercent / 100) {
-      return { approved: false, reason: `Daily risk ${(riskUsed * 100).toFixed(2)}% ≥ ${riskCfg.emergencyExitAtRiskPercent}% — emergency halt` };
+      return { approved: false, reason: `daily_loss_exceeded: ${(riskUsed * 100).toFixed(2)}% emergency halt` };
     }
 
     if (riskUsed >= riskCfg.stopNewTradesAtRiskPercent / 100) {
-      return { approved: false, reason: `Daily risk ${(riskUsed * 100).toFixed(2)}% ≥ ${riskCfg.stopNewTradesAtRiskPercent}% — no new trades` };
+      return { approved: false, reason: `daily_loss_exceeded: ${(riskUsed * 100).toFixed(2)}% no new trades` };
     }
 
     if (riskUsed >= riskCfg.reduceSizeAtRiskPercent / 100) {

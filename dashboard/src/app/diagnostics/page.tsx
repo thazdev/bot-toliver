@@ -89,12 +89,16 @@ function getBlockReasonShort(reason?: string): string {
   if (!reason) return 'unknown';
   const r = reason.toLowerCase();
   if (r.includes('insufficient') || r.includes('capital') || r.includes('balance') || r.includes('saldo')) return 'saldo insuficiente';
-  if (r.includes('max open positions') || r.includes('max positions')) return 'max posições atingido';
-  if (r.includes('daily risk') || r.includes('daily loss') || r.includes('risk budget')) return 'daily loss';
+  if (r.includes('max_positions') || r.includes('max positions')) return 'max posições atingido';
+  if (r.includes('daily_loss') || r.includes('daily risk') || r.includes('daily loss')) return 'daily loss';
   if (r.includes('exposure') || r.includes('exceed max')) return 'exposição excedida';
-  if (r.includes('circuit breaker') || r.includes('tripped')) return 'circuit breaker';
+  if (r.includes('circuit_breaker') || r.includes('circuit breaker') || r.includes('tripped')) return 'circuit breaker';
   if (r.includes('cooldown')) return 'cooldown';
-  if (r.includes('already have') || r.includes('open position')) return 'posição já aberta';
+  if (r.includes('already_have') || r.includes('already have') || r.includes('open position')) return 'posição já aberta';
+  if (r.includes('position_size_too_large')) return 'position size too large';
+  if (r.includes('same_dev_wallet')) return 'same dev wallet';
+  if (r.includes('risk_check_exception')) return 'risk check exception';
+  if (r.includes('riskcheck_returned_no_reason')) return 'riskcheck returned no reason';
   return reason.length > 35 ? `${reason.slice(0, 32)}…` : reason;
 }
 
