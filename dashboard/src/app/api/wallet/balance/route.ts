@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { dashboardConfig } from '@/config/dashboard.config';
 import { requireAuth } from '@/lib/auth-guard';
 
+export const dynamic = 'force-dynamic';
+
 const CACHE_TTL = 300;
 const RATE_LIMIT_COOLDOWN_KEY = 'dashboard:wallet_balance:rate_limited';
 const RATE_LIMIT_COOLDOWN_SEC = 300;

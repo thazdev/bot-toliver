@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-guard';
 import type { StuckPosition } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const { error } = await requireAuth();
   if (error) return error;

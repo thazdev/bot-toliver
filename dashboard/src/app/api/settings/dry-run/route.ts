@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-guard';
 import { redis } from '@/lib/redis';
 
+export const dynamic = 'force-dynamic';
+
 const MODE_KEY = 'bot:mode';
 
 export async function GET() {

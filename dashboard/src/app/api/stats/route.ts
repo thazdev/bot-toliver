@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-guard';
 import { dashboardConfig } from '@/config/dashboard.config';
 
+export const dynamic = 'force-dynamic';
+
 async function fetchWalletSol(walletAddress: string): Promise<number> {
   const heliusUrl = dashboardConfig.rpc.heliusUrl;
   if (!heliusUrl || !walletAddress) return 0;

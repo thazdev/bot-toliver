@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-guard';
 
+export const dynamic = 'force-dynamic';
+
 function deriveExitReason(strategyId: string, pnlPercent: number): string {
   const s = strategyId.toLowerCase();
   if (s.includes('stop') || s.includes('sl')) return 'Stop Loss';

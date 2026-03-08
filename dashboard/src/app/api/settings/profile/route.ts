@@ -3,6 +3,8 @@ import { hash } from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-guard';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   const { session, error } = await requireAuth();
   if (error) return error;

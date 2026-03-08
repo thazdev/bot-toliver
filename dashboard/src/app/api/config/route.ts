@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-guard';
 import { redis } from '@/lib/redis';
 
+export const dynamic = 'force-dynamic';
+
 const ALLOWED_KEYS = ['stop_loss', 'take_profit', 'max_position_size', 'max_open_positions', 'slippage'] as const;
 type ConfigKey = (typeof ALLOWED_KEYS)[number];
 

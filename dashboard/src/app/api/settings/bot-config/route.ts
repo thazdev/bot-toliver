@@ -3,6 +3,8 @@ import { requireAuth } from '@/lib/auth-guard';
 import { dashboardConfig } from '@/config/dashboard.config';
 import { redis } from '@/lib/redis';
 
+export const dynamic = 'force-dynamic';
+
 const MODE_KEY = 'bot:mode';
 const BOT_ENABLED_KEY = 'bot:enabled';
 

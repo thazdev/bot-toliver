@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { requireAuth } from '@/lib/auth-guard';
 
+export const dynamic = 'force-dynamic';
+
 const STAGE2_REASON_KEYS = [
   'liquidity_too_low',
   'mint_authority_active',

@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { dashboardConfig } from '@/config/dashboard.config';
 import { requireAuth } from '@/lib/auth-guard';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Debug: mostra qual wallet está sendo usada e o saldo bruto.
  * Acesse /api/wallet/info (logado) para verificar.

@@ -3,6 +3,8 @@ import { hash } from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { dashboardConfig } from '@/config/dashboard.config';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   const count = await prisma.user.count();
   if (count > 0) {

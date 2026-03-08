@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { requireAuth } from '@/lib/auth-guard';
 
+export const dynamic = 'force-dynamic';
+
 const TOTAL_CAPITAL_SOL = parseFloat(process.env.TOTAL_CAPITAL_SOL ?? '0.9');
 
 export async function GET() {

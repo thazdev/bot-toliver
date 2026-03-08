@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-guard';
 import { dashboardConfig } from '@/config/dashboard.config';
 
+export const dynamic = 'force-dynamic';
+
 async function fetchJupiterPrices(mints: string[]): Promise<Record<string, number>> {
   if (mints.length === 0) return {};
   try {

@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { dashboardConfig } from '@/config/dashboard.config';
 import { requireAuth } from '@/lib/auth-guard';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Debug do health - verifica Redis, DB, bot_health, stats.
  * Acesse: /api/health/debug (logado)

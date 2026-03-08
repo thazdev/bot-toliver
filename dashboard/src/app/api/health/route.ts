@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import type { BotHealth } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 async function getBotMode(): Promise<'dry-run' | 'real'> {
   try {
     const val = await redis.get('bot:mode');
