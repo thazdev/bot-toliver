@@ -96,12 +96,12 @@ export class TradeExecutor {
         : await this.jupiterClient.getSellQuote(tradeRequest.tokenMint, amountLamports, slippageBps);
 
       const priceImpact = parseFloat(quote.priceImpactPct);
-      logger.info('TradeExecutor: DRY RUN - would have executed trade', {
-        tokenMint: tradeRequest.tokenMint,
-        direction: tradeRequest.direction,
-        inAmount: quote.inAmount,
+      const acao = tradeRequest.direction === 'buy' ? 'compra' : 'venda';
+      logger.info(`SIMULAÇÃO: ${acao} executada (dry run)`, {
+        tokenMint: tradeRequest.tokenMint.slice(0, 12),
+        amountSol: tradeRequest.amountSol.toFixed(4),
         outAmount: quote.outAmount,
-        priceImpact,
+        priceImpact: `${priceImpact}%`,
       });
 
       const result = this.buildTradeResult(tradeRequest, null, 'confirmed', quote, null);

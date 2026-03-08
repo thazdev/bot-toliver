@@ -346,7 +346,7 @@ async function main(): Promise<void> {
 
         const filterOutcome = await tradeFilterPipeline.runPipeline(context);
         if (!filterOutcome.passed) {
-          logger.debug('TradeFilterPipeline rejected token', {
+          logger.info('Token rejeitado pelo filtro', {
             token: tokenInfo.mintAddress,
             reason: filterOutcome.rejectionReason,
             durationMs: filterOutcome.totalDurationMs,
@@ -389,6 +389,12 @@ async function main(): Promise<void> {
           });
 
           if (riskCheck.approved) {
+            logger.info('Trade aprovado — enfileirando compra', {
+              tokenMint: tokenInfo.mintAddress.slice(0, 12),
+              amountSol: finalSize.toFixed(4),
+              dryRun,
+              strategy: buySignal.triggerType,
+            });
             await queueManager.addJob(QueueName.TRADE_EXECUTE, 'strategy-buy', {
               tradeRequest: {
                 tokenMint: tokenInfo.mintAddress,
@@ -403,6 +409,11 @@ async function main(): Promise<void> {
             statsTracker.incrementTradesBlocked();
             logger.info('Trade blocked by risk manager', { reason: riskCheck.reason });
           }
+        } else {
+          logger.debug('Nenhum sinal de compra (estratégias não aprovaram)', {
+            tokenMint: tokenInfo.mintAddress.slice(0, 12),
+            bestConfidence: buySignal?.confidence ?? 0,
+          });
         }
       }
     }
