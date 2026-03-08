@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.js';
+import { getEffectiveDryRun } from '../config/DryRunResolver.js';
 import { PositionManager } from './PositionManager.js';
 import { PnLCalculator } from './PnLCalculator.js';
 import { PriceMonitor } from '../monitoring/PriceMonitor.js';
@@ -80,6 +81,7 @@ export class PositionTracker {
   }
 
   private async enqueueSell(tokenMint: string, amountSol: number, strategyId: string): Promise<void> {
+    const dryRun = await getEffectiveDryRun(this.config);
     await this.queueManager.addJob(QueueName.TRADE_EXECUTE, 'auto-sell', {
       tradeRequest: {
         tokenMint,
@@ -87,7 +89,7 @@ export class PositionTracker {
         amountSol,
         slippageBps: this.config.trading.defaultSlippageBps,
         strategyId,
-        dryRun: this.config.bot.dryRun,
+        dryRun,
       },
     } satisfies TradeExecuteJobPayload);
   }

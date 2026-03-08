@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { signIn } from 'next-auth/react';
 import { Bot, Loader2, Bug } from 'lucide-react';
 import { debugLog, getDebugLogs, clearDebugLogs, type LogEntry } from '@/lib/debug-log';
+import { preferences } from '@/lib/preferences';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -26,7 +27,9 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     const callbackUrl =
-      (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('callbackUrl')) || '/';
+      (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('callbackUrl')) ||
+      preferences.getLastPath() ||
+      '/';
     debugLog('1-LOGIN-SUBMIT', { username, callbackUrl });
 
     try {

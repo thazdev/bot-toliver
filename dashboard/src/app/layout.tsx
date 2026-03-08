@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { SessionProvider } from 'next-auth/react';
 import { AuthGuard } from '@/components/AuthGuard';
+import { NavigateTracker } from '@/components/NavigateTracker';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -13,7 +14,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR" className="dark">
       <body className="min-h-screen bg-surface antialiased">
         <SessionProvider>
-          <AuthGuard>{children}</AuthGuard>
+          <AuthGuard>
+            <NavigateTracker />
+            {children}
+          </AuthGuard>
         </SessionProvider>
       </body>
     </html>

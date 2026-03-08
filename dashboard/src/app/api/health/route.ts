@@ -3,13 +3,21 @@ import { redis } from '@/lib/redis';
 import { dashboardConfig } from '@/config/dashboard.config';
 import type { BotHealth } from '@/types';
 
+async function getDryRun(): Promise<boolean> {
+  try {
+    const val = await redis.get('bot:dry_run');
+    if (val !== null && val !== undefined) return val === 'true';
+  } catch {}
+  return dashboardConfig.bot.dryRun;
+}
+
 export async function GET() {
   try {
     await redis.connect().catch(() => {});
 
     const [healthRaw, dryRun] = await Promise.all([
       redis.get('bot_health'),
-      Promise.resolve(dashboardConfig.bot.dryRun),
+      getDryRun(),
     ]);
 
     if (healthRaw) {

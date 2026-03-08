@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
-import { TrendingUp, Target, Layers, ShieldAlert } from 'lucide-react';
+import { TrendingUp, Target, Layers, ShieldAlert, Info } from 'lucide-react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { Header } from '@/components/layout/Header';
 import { KpiCard } from '@/components/dashboard/KpiCard';
@@ -10,15 +10,29 @@ import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { OpenPositionsTable } from '@/components/dashboard/OpenPositionsTable';
 import { fetcher } from '@/lib/fetcher';
 import type { KpiData } from '@/types';
+import type { BotHealth } from '@/types';
 
 export default function OverviewPage() {
   const { data: kpi } = useSWR<KpiData>('/api/dashboard/overview', fetcher, {
     refreshInterval: 15_000,
   });
+  const { data: health } = useSWR<BotHealth>('/api/health', fetcher, { refreshInterval: 15_000 });
+
+  const isDryRun = health?.status === 'DRY_RUN';
 
   return (
     <DashboardShell>
       <Header />
+
+      {isDryRun && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning">
+          <Info className="h-4 w-4 shrink-0" />
+          <span>
+            Modo simulação ativo. Os KPIs, histórico e posições mostram resultados simulados (sem dinheiro real).
+            Ative em Settings para operar de verdade.
+          </span>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard

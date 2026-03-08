@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { Save, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Save, Loader2, AlertTriangle, CheckCircle, Play, Pause } from 'lucide-react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { clsx } from 'clsx';
 import { fetcher } from '@/lib/fetcher';
 import type { StuckPosition } from '@/types';
 
@@ -19,7 +20,11 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  const { data: botConfig } = useSWR<Record<string, string>>('/api/settings/bot-config', fetcher);
+  const { data: botConfig, mutate: mutateBotConfig } = useSWR<Record<string, string>>(
+    '/api/settings/bot-config',
+    fetcher,
+    { refreshInterval: 10_000 },
+  );
   const { data: stuck, mutate: mutateStuck } = useSWR<StuckPosition[]>(
     '/api/settings/stuck-positions',
     fetcher,
@@ -28,6 +33,7 @@ export default function SettingsPage() {
 
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [resolveNote, setResolveNote] = useState('');
+  const [dryRunLoading, setDryRunLoading] = useState(false);
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -133,23 +139,61 @@ export default function SettingsPage() {
         </GlassCard>
 
         <GlassCard>
-          <h2 className="mb-4 text-sm font-semibold text-slate-300">Config do Bot (read-only)</h2>
+          <h2 className="mb-4 text-sm font-semibold text-slate-300">Bot</h2>
           {botConfig && (
-            <div className="space-y-2.5">
-              {Object.entries(botConfig).map(([key, val]) => (
-                <div key={key} className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">{key}</span>
-                  <span
-                    className={
-                      key === 'DRY_RUN' && val === 'true'
-                        ? 'rounded bg-warning/20 px-2 py-0.5 font-bold text-warning'
-                        : 'font-medium text-slate-300'
-                    }
-                  >
-                    {val}
-                  </span>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-200">Modo de operação</p>
+                  <p className="text-xs text-slate-500">
+                    {botConfig.DRY_RUN === 'true'
+                      ? 'Dry Run: simulando trades (sem dinheiro real)'
+                      : 'LIVE: executando trades reais'}
+                  </p>
                 </div>
-              ))}
+                <button
+                  disabled={dryRunLoading}
+                  onClick={async () => {
+                    setDryRunLoading(true);
+                    const next = botConfig.DRY_RUN !== 'true';
+                    const res = await fetch('/api/settings/dry-run', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ dryRun: next }),
+                    });
+                    if (res.ok) await mutateBotConfig();
+                    setDryRunLoading(false);
+                  }}
+                  className={clsx(
+                    'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors',
+                    botConfig.DRY_RUN === 'true'
+                      ? 'bg-success/20 text-success hover:bg-success/30'
+                      : 'bg-warning/20 text-warning hover:bg-warning/30',
+                  )}
+                >
+                  {botConfig.DRY_RUN === 'true' ? (
+                    <>
+                      <Play className="h-4 w-4" />
+                      Ativar (LIVE)
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="h-4 w-4" />
+                      Pausar (Dry Run)
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="space-y-2.5 border-t border-card-border pt-4">
+                {Object.entries(botConfig)
+                  .filter(([k]) => k !== 'DRY_RUN')
+                  .map(([key, val]) => (
+                    <div key={key} className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500">{key}</span>
+                      <span className="font-medium text-slate-300">{val}</span>
+                    </div>
+                  ))}
+              </div>
             </div>
           )}
         </GlassCard>

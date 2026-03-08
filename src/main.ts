@@ -46,6 +46,7 @@ import { ExitManager } from './strategies/ExitManager.js';
 import { StopLossManager } from './strategies/StopLossManager.js';
 import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
 import { getTierConfig } from './strategies/config.js';
+import { getEffectiveDryRun } from './config/DryRunResolver.js';
 import { AlertService } from './alerts/AlertService.js';
 import { StatsTracker } from './stats/StatsTracker.js';
 import { StatsSnapshot } from './stats/StatsSnapshot.js';
@@ -371,6 +372,7 @@ async function main(): Promise<void> {
           const sizeSol = positionSizer.calculatePositionSize(buySignal.confidence);
           const baseSize = sizeSol > 0 ? sizeSol : buySignal.suggestedSizeSol;
           const finalSize = baseSize * guardStatus.positionSizeMultiplier;
+          const dryRun = await getEffectiveDryRun(config);
 
           const riskCheck = await riskManager.preTradeCheck({
             tokenMint: tokenInfo.mintAddress,
@@ -378,7 +380,7 @@ async function main(): Promise<void> {
             amountSol: finalSize,
             slippageBps: config.trading.defaultSlippageBps,
             strategyId: buySignal.triggerType ?? 'auto',
-            dryRun: config.bot.dryRun,
+            dryRun,
           });
 
           if (riskCheck.approved) {
@@ -389,7 +391,7 @@ async function main(): Promise<void> {
                 amountSol: finalSize,
                 slippageBps: config.trading.defaultSlippageBps,
                 strategyId: buySignal.triggerType ?? 'auto',
-                dryRun: config.bot.dryRun,
+                dryRun,
               },
             } satisfies TradeExecuteJobPayload);
           } else {
