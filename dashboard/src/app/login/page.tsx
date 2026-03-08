@@ -25,16 +25,17 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    debugLog('1-LOGIN-SUBMIT', { username });
+    const callbackUrl =
+      (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('callbackUrl')) || '/';
+    debugLog('1-LOGIN-SUBMIT', { username, callbackUrl });
 
     try {
       // redirect: true = servidor retorna 302 com Set-Cookie na mesma resposta.
-      // Evita problema de cookie não ser enviado em navegação posterior (Railway/proxy).
       const res = (await signIn('credentials', {
         username,
         password,
         redirect: true,
-        callbackUrl: '/',
+        callbackUrl,
       })) as unknown as { ok?: boolean; error?: string; status?: number; url?: string } | undefined;
 
       debugLog('2-SIGNIN-RESPONSE', { ok: res?.ok, error: res?.error, status: res?.status, url: res?.url });
