@@ -1,6 +1,6 @@
 export type TradeDirection = 'buy' | 'sell';
 
-export type TradeStatus = 'pending' | 'submitted' | 'confirmed' | 'failed' | 'cancelled';
+export type TradeStatus = 'pending' | 'submitted' | 'confirmed' | 'failed' | 'cancelled' | 'dry_run';
 
 export interface TradeRequest {
   tokenMint: string;

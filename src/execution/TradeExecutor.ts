@@ -95,16 +95,20 @@ export class TradeExecutor {
         ? await this.jupiterClient.getBuyQuote(tradeRequest.tokenMint, amountLamports, slippageBps)
         : await this.jupiterClient.getSellQuote(tradeRequest.tokenMint, amountLamports, slippageBps);
 
-      const priceImpact = parseFloat(quote.priceImpactPct);
-      const acao = tradeRequest.direction === 'buy' ? 'compra' : 'venda';
-      logger.info(`SIMULAÇÃO: ${acao} executada (dry run)`, {
-        tokenMint: tradeRequest.tokenMint.slice(0, 12),
-        amountSol: tradeRequest.amountSol.toFixed(4),
-        outAmount: quote.outAmount,
-        priceImpact: `${priceImpact}%`,
+      logger.info('🔵 DRY RUN TRADE — would have executed', {
+        direction: tradeRequest.direction,
+        tokenMint: tradeRequest.tokenMint,
+        amountSOL: tradeRequest.amountSol,
+        reason: 'dry_run_simulated',
       });
 
-      const result = this.buildTradeResult(tradeRequest, null, 'confirmed', quote, null);
+      const result = this.buildTradeResult(
+        tradeRequest,
+        null,
+        'dry_run',
+        quote,
+        'Simulated — DRY_RUN=true',
+      );
       await this.tradeRepository.insert(result);
       return result;
     }

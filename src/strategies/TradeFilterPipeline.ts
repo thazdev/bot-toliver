@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.js';
+import { RedisClient } from '../core/cache/RedisClient.js';
 import { getTierConfig, type TierConfig, type FilterConfig } from './config.js';
 import type {
   StrategyTier,
@@ -8,6 +9,19 @@ import type {
   StrategyFeedbackReport,
   SentimentRegime,
 } from '../types/strategy.types.js';
+
+interface PipelineTelemetry {
+  tokenMint: string;
+  receivedAt: number;
+  stage1_result: string;
+  stage2_result: string;
+  stage3_result: string;
+  stage4_result: string;
+  stage5_result: string;
+  stage6_result: string;
+  finalResult: string;
+  scores: Record<string, number>;
+}
 
 interface RejectionRecord {
   tokenMint: string;
@@ -52,26 +66,60 @@ export class TradeFilterPipeline {
     const steps: FilterPipelineResult[] = [];
     const tokenMint = context.tokenInfo.mintAddress;
 
+    const telemetry: PipelineTelemetry = {
+      tokenMint,
+      receivedAt: Date.now(),
+      stage1_result: '',
+      stage2_result: '',
+      stage3_result: '',
+      stage4_result: '',
+      stage5_result: '',
+      stage6_result: '',
+      finalResult: '',
+      scores: {},
+    };
+
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      await redis.incr('diag:tokens_received_total');
+    } catch {
+      // Non-critical: diagnóstico
+    }
+
     if (this.emergencyHalt) {
-      steps.push({ step: 'emergency_halt', passed: false, reason: 'Emergency halt active via admin override', durationMs: 0 });
-      return this.buildOutcome(tokenMint, steps, startMs, 0);
+      const step = { step: 'emergency_halt', passed: false, reason: 'Emergency halt active via admin override', durationMs: 0 };
+      steps.push(step);
+      telemetry.stage1_result = `rejected: ${step.reason}`;
+      logger.info('PIPELINE_TELEMETRY', { telemetry });
+      return await this.buildOutcome(tokenMint, steps, startMs, 0);
     }
 
     const step2 = this.step2HardReject(context);
     steps.push(step2);
-    if (!step2.passed) return this.buildOutcome(tokenMint, steps, startMs, 0);
+    telemetry.stage1_result = step2.passed ? 'passed' : `rejected: ${step2.reason}`;
+    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    if (!step2.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
     const step3 = this.step3BasicViability(context);
     steps.push(step3);
-    if (!step3.passed) return this.buildOutcome(tokenMint, steps, startMs, 0);
+    const isRugReject = !step3.passed && step3.reason?.toLowerCase().includes('rug score');
+    telemetry.stage2_result = step3.passed ? 'passed' : (isRugReject ? 'passed' : `rejected: ${step3.reason}`);
+    telemetry.stage3_result = step3.passed ? 'passed' : (isRugReject ? `rejected: ${step3.reason}` : 'passed');
+    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    if (!step3.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
     const step4 = this.step4DeepAnalysis(context);
     steps.push(step4);
-    if (!step4.passed) return this.buildOutcome(tokenMint, steps, startMs, 0);
+    telemetry.stage4_result = step4.passed ? 'passed' : `rejected: ${step4.reason}`;
+    Object.assign(telemetry.scores, step4.scores ?? {});
+    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    if (!step4.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
     const step5 = this.step5MarketContext(context);
     steps.push(step5);
-    if (!step5.passed) return this.buildOutcome(tokenMint, steps, startMs, 0);
+    telemetry.stage5_result = step5.passed ? 'passed' : `rejected: ${step5.reason}`;
+    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    if (!step5.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
 
     const entryScore = step4.scores?.['entryScore'] ?? 0;
     let adjustedScore = entryScore;
@@ -82,29 +130,39 @@ export class TradeFilterPipeline {
 
     const step6 = this.step6SizingRiskCheck(context);
     steps.push(step6);
-    if (!step6.passed) return this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
+    telemetry.stage6_result = step6.passed ? 'passed' : `rejected: ${step6.reason}`;
+    logger.info('PIPELINE_TELEMETRY', { telemetry });
+    if (!step6.passed) return await this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
 
     const threshold = this.filterConfig.minEntryScoreThreshold;
     if (adjustedScore < threshold) {
-      steps.push({
+      const finalStep = {
         step: 'final_score_gate',
         passed: false,
         reason: `Entry score ${adjustedScore.toFixed(1)} < threshold ${threshold}`,
         durationMs: 0,
         scores: { entryScore: adjustedScore, threshold },
-      });
-      return this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
+      };
+      steps.push(finalStep);
+      telemetry.finalResult = `rejected: ${finalStep.reason}`;
+      Object.assign(telemetry.scores, finalStep.scores ?? {});
+      logger.info('PIPELINE_TELEMETRY', { telemetry });
+      return await this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
     }
 
-    steps.push({
+    const finalStep = {
       step: 'final_score_gate',
       passed: true,
       reason: `Entry score ${adjustedScore.toFixed(1)} ≥ ${threshold} — APPROVED for execution`,
       durationMs: 0,
       scores: { entryScore: adjustedScore, threshold },
-    });
+    };
+    steps.push(finalStep);
+    telemetry.finalResult = 'passed';
+    Object.assign(telemetry.scores, finalStep.scores ?? {});
+    logger.info('PIPELINE_TELEMETRY', { telemetry });
 
-    return this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
+    return await this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
   }
 
   private step2HardReject(context: StrategyContext): FilterPipelineResult {
@@ -179,7 +237,10 @@ export class TradeFilterPipeline {
       };
     }
 
-    if (!context.safetyData.honeypotSimulationPassed) {
+    if (
+      !this.tierConfig.honeypot.skipHoneypotSimulation &&
+      !context.safetyData.honeypotSimulationPassed
+    ) {
       return { step: 'deep_analysis', passed: false, reason: 'Honeypot simulation failed', durationMs: Date.now() - start };
     }
 
@@ -197,7 +258,18 @@ export class TradeFilterPipeline {
   private step5MarketContext(context: StrategyContext): FilterPipelineResult {
     const start = Date.now();
 
-    if (context.sentimentData.sentimentRegime === 'panic') {
+    const panicMode = context.sentimentData.sentimentRegime === 'panic';
+    const dailyLossExceeded = context.dailyLossPercent >= 5;
+
+    logger.info('STAGE5_CHECK', {
+      panicMode,
+      consecutiveLosses: context.consecutiveLosses,
+      dailyLossExceeded,
+      jupiterOnline: context.jupiterAvailable,
+      emergencyHalt: this.emergencyHalt,
+    });
+
+    if (panicMode) {
       return { step: 'market_context', passed: false, reason: 'Sentiment regime: PANIC — new entries suspended', durationMs: Date.now() - start };
     }
 
@@ -205,7 +277,7 @@ export class TradeFilterPipeline {
       return { step: 'market_context', passed: false, reason: '5+ consecutive losses — no-trade condition', durationMs: Date.now() - start };
     }
 
-    if (context.dailyLossPercent >= 5) {
+    if (dailyLossExceeded) {
       return { step: 'market_context', passed: false, reason: `Daily loss ${context.dailyLossPercent.toFixed(1)}% ≥ 5% — no-trade condition`, durationMs: Date.now() - start };
     }
 
@@ -311,12 +383,28 @@ export class TradeFilterPipeline {
     return (liquidityScore * 0.25) + (holderScore * 0.20) + (momentumScore * 0.20) + (safetyScore * 0.25) + (smartMoneyScore * 0.10);
   }
 
-  private buildOutcome(
+  private getDiagRedisKey(failedStep: FilterPipelineResult): string {
+    if (failedStep.step === 'emergency_halt' || failedStep.step === 'hard_reject') {
+      return 'diag:tokens_stage1_rejected';
+    }
+    if (failedStep.step === 'basic_viability') {
+      const isRug = failedStep.reason?.toLowerCase().includes('rug score');
+      return isRug ? 'diag:tokens_stage3_rejected' : 'diag:tokens_stage2_rejected';
+    }
+    if (failedStep.step === 'deep_analysis') return 'diag:tokens_stage4_rejected';
+    if (failedStep.step === 'market_context') return 'diag:tokens_stage5_rejected';
+    if (failedStep.step === 'sizing_risk' || failedStep.step === 'final_score_gate') {
+      return 'diag:tokens_stage6_rejected';
+    }
+    return `diag:tokens_stage_${failedStep.step}_rejected`;
+  }
+
+  private async buildOutcome(
     tokenMint: string,
     steps: FilterPipelineResult[],
     startMs: number,
     entryScore: number,
-  ): TradeFilterOutcome {
+  ): Promise<TradeFilterOutcome> {
     const passed = steps.every(s => s.passed);
     const failedStep = steps.find(s => !s.passed);
 
@@ -328,6 +416,18 @@ export class TradeFilterPipeline {
         scores: failedStep.scores ?? {},
         timestamp: Date.now(),
       });
+    }
+
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      if (passed) {
+        await redis.incr('diag:tokens_passed');
+      } else if (failedStep) {
+        const redisKey = this.getDiagRedisKey(failedStep);
+        await redis.incr(redisKey);
+      }
+    } catch {
+      // Non-critical: diagnóstico
     }
 
     return {

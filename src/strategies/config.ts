@@ -110,6 +110,10 @@ export interface MomentumConfig {
   momentumDecayStage3: number;
   momentumDecaySell1Percent: number;
   momentumDecaySell2Percent: number;
+  /** Type C entry: mínimo multiplicador de volume (relaxado para diagnóstico) */
+  minVolumeMultiplier?: number;
+  /** Type C entry: mínimo % de variação de preço em 5min */
+  minPriceChange5min?: number;
 }
 
 export interface LaunchConfig {
@@ -139,6 +143,8 @@ export interface HoneypotConfig {
   rejectTaxPercent: number;
   maxSellFailureRate: number;
   knownSafePrograms: string[];
+  /** Quando true, pula simulação Jupiter (diagnóstico) */
+  skipHoneypotSimulation?: boolean;
 }
 
 export interface ProfitTakingConfig {
@@ -237,6 +243,8 @@ export interface FilterConfig {
   euphoriaOverrideScore: number;
   feedbackAutoAdjustMaxPct: number;
   feedbackMinSampleSize: number;
+  /** Quando true, pula detecção de bundle (diagnóstico) */
+  skipBundleDetection?: boolean;
 }
 
 export interface TierConfig {
@@ -717,18 +725,38 @@ export function getTierConfig(tier: StrategyTier): TierConfig {
     entry: {
       ...base.entry,
       minLiquiditySol: Math.min(base.entry.minLiquiditySol, 0.5),
-      minHolderCount: 0,
-      minEntryScore: Math.min(base.entry.minEntryScore, 15),
-      maxTopHolderPercent: Math.max(base.entry.maxTopHolderPercent, 100),
-      maxTop5HolderPercent: Math.max(base.entry.maxTop5HolderPercent, 100),
-      minBuyTxLast60s: 0,
+      minHolderCount: Math.min(base.entry.minHolderCount, 3),
+      minEntryScore: Math.min(base.entry.minEntryScore, 30),
+      maxTopHolderPercent: Math.max(base.entry.maxTopHolderPercent, 50),
+      maxTop5HolderPercent: Math.max(base.entry.maxTop5HolderPercent, 80),
+      minBuyTxLast60s: Math.min(base.entry.minBuyTxLast60s ?? 2, 1),
+      maxPriceGainFromLaunch: Math.max(base.entry.maxPriceGainFromLaunch, 2000),
     },
     filter: {
       ...base.filter,
       deferTokenAgeSec: 3,
-      minRugScoreStep3: 40,
-      minEntryScoreThreshold: 15,
+      minRugScoreStep3: Math.min(base.filter.minRugScoreStep3, 35),
+      minEntryScoreThreshold: Math.min(base.filter.minEntryScoreThreshold, 30),
       feedbackMinSampleSize: 1,
+      skipBundleDetection: true,
+    },
+    launch: {
+      ...base.launch,
+      phase1MinPoolSol: Math.min(base.launch.phase1MinPoolSol, 0.5),
+      phase1MinRugScore: Math.min(base.launch.phase1MinRugScore, 35),
+      phase2MinHolders: Math.min(base.launch.phase2MinHolders, 5),
+      phase2MinUniqueBuyers: Math.min(base.launch.phase2MinUniqueBuyers, 3),
+    },
+    honeypot: {
+      ...base.honeypot,
+      maxBuyTaxPercent: 95,
+      maxSellTaxPercent: 95,
+      skipHoneypotSimulation: true,
+    },
+    momentum: {
+      ...base.momentum,
+      minVolumeMultiplier: 1.1,
+      minPriceChange5min: 1,
     },
   };
 }
@@ -792,7 +820,11 @@ export const RUG_SCORE_RULES = {
 
 export const SCAM_RULES = {
   walletAgeRejectHours: 0,
-  walletAgePenaltyHours: parseInt(process.env.SCAM_WALLET_AGE_PENALTY_HOURS ?? '24', 10),
+  walletAgePenaltyHours: parseInt(
+    process.env.SCAM_WALLET_AGE_PENALTY_HOURS ??
+      (process.env.FILTER_RELAX_FOR_DRY_RUN === 'true' ? '0' : '24'),
+    10,
+  ),
   walletAgePenaltyAmount: parseInt(process.env.SCAM_WALLET_AGE_PENALTY_AMOUNT ?? '20', 10),
   walletAgeReduceScoreDays: 7,
   walletAgeReduceScoreAmount: 15,

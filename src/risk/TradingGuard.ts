@@ -103,6 +103,7 @@ export class TradingGuard {
 
   private checkHardBlocks(context: StrategyContext): string | null {
     if (this.emergencyHalt) {
+      logger.warn('TRADING_GUARD: emergencyHalt is TRUE — all trades blocked');
       return 'Emergency halt active — bot health critical, no new entries';
     }
 

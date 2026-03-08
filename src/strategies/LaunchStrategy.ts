@@ -95,11 +95,17 @@ export class LaunchStrategy extends BaseStrategy {
       return skip('Phase 1 GATE 3 fail: mint authority not disabled');
     }
 
-    if (context.safetyData.bundleDetected) {
+    if (
+      !this.tierConfig.filter.skipBundleDetection &&
+      context.safetyData.bundleDetected
+    ) {
       return skip('Phase 1 GATE 4 fail: coordinated bundle launch detected');
     }
 
-    if (!context.safetyData.honeypotSimulationPassed) {
+    if (
+      !this.tierConfig.honeypot.skipHoneypotSimulation &&
+      !context.safetyData.honeypotSimulationPassed
+    ) {
       return skip('Phase 1: honeypot simulation not passed');
     }
 
@@ -166,7 +172,10 @@ export class LaunchStrategy extends BaseStrategy {
       return skip(`Phase 2: rug score ${context.safetyData.rugScore} too low`);
     }
 
-    if (!context.safetyData.honeypotSimulationPassed) {
+    if (
+      !this.tierConfig.honeypot.skipHoneypotSimulation &&
+      !context.safetyData.honeypotSimulationPassed
+    ) {
       return skip('Phase 2: honeypot simulation not passed');
     }
 
@@ -214,7 +223,10 @@ export class LaunchStrategy extends BaseStrategy {
       return skip('Phase 3: holders decreasing — late entry risk');
     }
 
-    if (!context.safetyData.honeypotSimulationPassed) {
+    if (
+      !this.tierConfig.honeypot.skipHoneypotSimulation &&
+      !context.safetyData.honeypotSimulationPassed
+    ) {
       return skip('Phase 3: honeypot simulation not passed');
     }
 
@@ -255,7 +267,12 @@ export class LaunchStrategy extends BaseStrategy {
       context.pumpfunMarketCap < cfg.pumpfunGradMcap &&
       !context.pumpfunGraduated
     ) {
-      if (!context.safetyData.honeypotSimulationPassed) return null;
+      if (
+        !this.tierConfig.honeypot.skipHoneypotSimulation &&
+        !context.safetyData.honeypotSimulationPassed
+      ) {
+        return null;
+      }
 
       const confidence = 0.70;
       const sizeSol = this.tierConfig.entry.solSizeMax * 0.6;

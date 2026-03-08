@@ -85,6 +85,7 @@ let botHealthMonitor: BotHealthMonitor;
 let tradingGuard: TradingGuard;
 let connectionsPaused = false;
 let botEnabledWatcherInterval: ReturnType<typeof setInterval> | null = null;
+let diagnosticsInterval: ReturnType<typeof setInterval> | null = null;
 
 async function main(): Promise<void> {
   (globalThis as { __botStartTime?: number }).__botStartTime = Date.now();
@@ -695,6 +696,30 @@ async function main(): Promise<void> {
   statsSnapshot = new StatsSnapshot(statsTracker);
   statsSnapshot.start();
 
+  diagnosticsInterval = setInterval(async () => {
+    try {
+      const redis = RedisClient.getInstance().getClient();
+      const total = parseInt((await redis.get('diag:tokens_received_total')) ?? '0', 10);
+      const stage1 = parseInt((await redis.get('diag:tokens_stage1_rejected')) ?? '0', 10);
+      const stage2 = parseInt((await redis.get('diag:tokens_stage2_rejected')) ?? '0', 10);
+      const stage3 = parseInt((await redis.get('diag:tokens_stage3_rejected')) ?? '0', 10);
+      const stage4 = parseInt((await redis.get('diag:tokens_stage4_rejected')) ?? '0', 10);
+      const stage5 = parseInt((await redis.get('diag:tokens_stage5_rejected')) ?? '0', 10);
+      const stage6 = parseInt((await redis.get('diag:tokens_stage6_rejected')) ?? '0', 10);
+      const passed = parseInt((await redis.get('diag:tokens_passed')) ?? '0', 10);
+
+      logger.info(
+        `[DIAGNOSTICS] Tokens recebidos total: ${total} | ` +
+          `Stage 1 (blacklist/honeypot): ${stage1} | Stage 2 (liquidez/authority): ${stage2} | ` +
+          `Stage 3 (rug score): ${stage3} | Stage 4 (holders/honeypot/entry): ${stage4} | ` +
+          `Stage 5 (market context): ${stage5} | Stage 6 (balance/sizing): ${stage6} | ` +
+          `Passaram todos os filtros: ${passed}`,
+      );
+    } catch (err) {
+      logger.debug('Diagnostics interval error', { err: String(err) });
+    }
+  }, 60_000);
+
   // Watcher: quando bot desligado no dashboard, pausa conexões Helius (WebSocket + RPC)
   botEnabledWatcherInterval = setInterval(async () => {
     try {
@@ -751,6 +776,10 @@ async function shutdown(signal: string): Promise<void> {
     if (botEnabledWatcherInterval) {
       clearInterval(botEnabledWatcherInterval);
       botEnabledWatcherInterval = null;
+    }
+    if (diagnosticsInterval) {
+      clearInterval(diagnosticsInterval);
+      diagnosticsInterval = null;
     }
 
     for (const listener of listeners) {

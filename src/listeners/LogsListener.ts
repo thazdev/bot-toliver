@@ -34,6 +34,10 @@ export class LogsListener extends BaseListener {
   private lastLatencyWarnAt = 0;
   private lastNoTokenMintAt = 0;
   private lastLiquidityBelowAt = 0;
+  private eventCounter = 0;
+  private tokenCounter = 0;
+  private poolCounter = 0;
+  private discoveryHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(queueManager: QueueManager) {
     super('LogsListener', queueManager);
@@ -72,12 +76,24 @@ export class LogsListener extends BaseListener {
         });
       }
     }
+
+    this.discoveryHeartbeatInterval = setInterval(() => {
+      logger.info('DISCOVERY_HEARTBEAT', {
+        eventsLast60s: this.eventCounter,
+        tokensDetectedLast60s: this.tokenCounter,
+        poolsDetectedLast60s: this.poolCounter,
+      });
+      this.eventCounter = 0;
+      this.tokenCounter = 0;
+      this.poolCounter = 0;
+    }, 60_000);
   }
 
   private async processLogs(programName: string, logs: Logs): Promise<void> {
     if (!this.isActive || isConnectionsPaused() || !(await isBotEnabled())) return;
     BotHealthMonitor.recordEvent();
     this.logBatchCount++;
+    this.eventCounter++;
     const now = Date.now();
     if (now - this.lastLogInfoAt > 60_000) {
       logger.info('LogsListener: WebSocket recebendo logs', {
@@ -307,6 +323,8 @@ export class LogsListener extends BaseListener {
         createdAt: new Date(blockTime * 1000),
         isActive: true,
       };
+      this.tokenCounter++;
+      this.poolCounter++;
       // Emite apenas POOL_CREATED (evita job duplicado — antes emitíamos POOL_CREATED + TOKEN_DETECTED)
       this.onEvent({ type: 'POOL_CREATED', timestamp: blockTime * 1000, data: poolData });
     } catch (error: unknown) {
@@ -321,6 +339,10 @@ export class LogsListener extends BaseListener {
 
   async stop(): Promise<void> {
     this.isActive = false;
+    if (this.discoveryHeartbeatInterval) {
+      clearInterval(this.discoveryHeartbeatInterval);
+      this.discoveryHeartbeatInterval = null;
+    }
     const connection = this.connectionManager.getSubscriptionConnection();
     for (const subId of this.subscriptionIds) {
       try {
