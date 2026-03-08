@@ -98,3 +98,40 @@ export interface UserProfile {
   walletAddress: string;
   tier: string;
 }
+
+export interface DryRunOpenPosition {
+  id: string;
+  tokenMint: string;
+  entryPrice: number;
+  entryTime: string;
+  amountSOL: number;
+  amountTokens: number;
+  entryScore: number;
+  strategy: string;
+  tier: string;
+  stopLossPrice: number;
+  tp1Price: number;
+  tp2Price: number;
+  tp3Price: number;
+  trailingStopPrice: number | null;
+  peakPrice: number;
+  currentPrice: number;
+  currentPnlPct: number;
+  currentPnlSOL: number;
+  status: string;
+}
+
+export interface DryRunClosedPosition {
+  id: string;
+  tokenMint: string;
+  entryPrice: number;
+  exitPrice: number;
+  entryTime: string;
+  exitTime: string;
+  amountSOL: number;
+  entryScore: number;
+  strategy: string;
+  exitReason: string;
+  finalPnlPct: number;
+  finalPnlSOL: number;
+}

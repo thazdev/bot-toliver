@@ -7,7 +7,7 @@ import { DashboardShell } from '@/components/layout/DashboardShell';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GlowNumber } from '@/components/ui/GlowNumber';
 import { fetcher } from '@/lib/fetcher';
-import type { PositionHistoryResponse } from '@/types';
+import type { PositionHistoryResponse, DryRunOpenPosition, DryRunClosedPosition } from '@/types';
 
 function formatDuration(ms: number) {
   const m = Math.floor(ms / 60_000);
@@ -64,12 +64,12 @@ export default function PositionsPage() {
     fetcher,
     { refreshInterval: 10_000 },
   );
-  const { data: dryOpen } = useSWR(
+  const { data: dryOpen } = useSWR<{ positions: DryRunOpenPosition[] }>(
     isDryRun ? '/api/positions/dry-run/open' : null,
     fetcher,
     { refreshInterval: 10_000 },
   );
-  const { data: dryClosed } = useSWR(
+  const { data: dryClosed } = useSWR<{ positions: DryRunClosedPosition[] }>(
     isDryRun ? '/api/positions/dry-run/closed' : null,
     fetcher,
     { refreshInterval: 10_000 },
