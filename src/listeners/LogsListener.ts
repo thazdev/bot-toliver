@@ -30,7 +30,7 @@ export class LogsListener extends BaseListener {
 
   async start(): Promise<void> {
     this.isActive = true;
-    const connection = this.connectionManager.getConnection();
+    const connection = this.connectionManager.getSubscriptionConnection();
 
     const programs = [
       { name: 'Raydium AMM V4', id: RAYDIUM_AMM_V4 },
@@ -250,7 +250,7 @@ export class LogsListener extends BaseListener {
   }
 
   async stop(): Promise<void> {
-    const connection = this.connectionManager.getConnection();
+    const connection = this.connectionManager.getSubscriptionConnection();
     for (const subId of this.subscriptionIds) {
       try {
         await connection.removeOnLogsListener(subId);

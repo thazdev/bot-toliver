@@ -23,7 +23,7 @@ export class LiquidityListener extends BaseListener {
    */
   async start(): Promise<void> {
     this.isActive = true;
-    const connection = this.connectionManager.getConnection();
+    const connection = this.connectionManager.getSubscriptionConnection();
 
     const programs = [
       { name: 'Raydium', id: RAYDIUM_AMM_V4 },
@@ -87,7 +87,7 @@ export class LiquidityListener extends BaseListener {
    * Unsubscribes from all liquidity event subscriptions.
    */
   async stop(): Promise<void> {
-    const connection = this.connectionManager.getConnection();
+    const connection = this.connectionManager.getSubscriptionConnection();
     for (const subId of this.subscriptionIds) {
       try {
         await connection.removeOnLogsListener(subId);

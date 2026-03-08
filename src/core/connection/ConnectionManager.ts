@@ -8,16 +8,21 @@ import type { SolanaConfig, RateLimitConfig } from '../../types/config.types.js'
  * Central Solana connection manager.
  * All RPC calls must go through this manager. It provides rate-limited,
  * fallback-aware connections and wallet access.
+ *
+ * IMPORTANTE: logsSubscribe/onLogs exige WebSocket. Os listeners usam
+ * getSubscriptionConnection() que usa HELIUS_WS_URL.
  */
 export class ConnectionManager {
   private static instance: ConnectionManager | null = null;
   private rpcFallback: RpcFallback;
+  private subscriptionConnection: Connection;
   private rateLimiter: RateLimiter;
   private wallet: Keypair;
 
   private constructor(solanaConfig: SolanaConfig, rateLimitConfig: RateLimitConfig) {
     this.rateLimiter = RateLimiter.initialize(rateLimitConfig);
     this.rpcFallback = new RpcFallback(solanaConfig.heliusRpcUrl, solanaConfig.fallbackRpcUrl);
+    this.subscriptionConnection = new Connection(solanaConfig.heliusWsUrl, 'processed');
 
     try {
       const keyBytes = Uint8Array.from(Buffer.from(solanaConfig.walletPrivateKey, 'base64'));
@@ -33,8 +38,17 @@ export class ConnectionManager {
 
     logger.info('ConnectionManager initialized', {
       primaryRpc: solanaConfig.heliusRpcUrl.slice(0, 30) + '...',
+      subscriptionWs: solanaConfig.heliusWsUrl.startsWith('wss') ? 'enabled' : 'disabled',
       walletPublicKey: this.wallet.publicKey.toBase58(),
     });
+  }
+
+  /**
+   * Retorna conexão WebSocket para subscriptions (onLogs, etc).
+   * logsSubscribe exige WebSocket — usar HTTP não recebe eventos.
+   */
+  getSubscriptionConnection(): Connection {
+    return this.subscriptionConnection;
   }
 
   /**

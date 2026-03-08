@@ -23,7 +23,7 @@ export class RaydiumPoolListener extends BaseListener {
    */
   async start(): Promise<void> {
     this.isActive = true;
-    const connection = this.connectionManager.getConnection();
+    const connection = this.connectionManager.getSubscriptionConnection();
 
     try {
       const raydiumPubkey = new PublicKey(RAYDIUM_AMM_V4);
@@ -83,7 +83,7 @@ export class RaydiumPoolListener extends BaseListener {
    */
   async stop(): Promise<void> {
     if (this.subscriptionId !== null) {
-      const connection = this.connectionManager.getConnection();
+      const connection = this.connectionManager.getSubscriptionConnection();
       try {
         await connection.removeOnLogsListener(this.subscriptionId);
       } catch (error: unknown) {

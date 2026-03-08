@@ -23,7 +23,7 @@ export class TokenMintListener extends BaseListener {
    */
   async start(): Promise<void> {
     this.isActive = true;
-    const connection = this.connectionManager.getConnection();
+    const connection = this.connectionManager.getSubscriptionConnection();
 
     try {
       const tokenProgramId = new PublicKey(TOKEN_PROGRAM_ID);
@@ -81,7 +81,7 @@ export class TokenMintListener extends BaseListener {
    */
   async stop(): Promise<void> {
     if (this.subscriptionId !== null) {
-      const connection = this.connectionManager.getConnection();
+      const connection = this.connectionManager.getSubscriptionConnection();
       try {
         await connection.removeOnLogsListener(this.subscriptionId);
       } catch (error: unknown) {

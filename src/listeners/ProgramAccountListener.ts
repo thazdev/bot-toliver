@@ -23,7 +23,7 @@ export class ProgramAccountListener extends BaseListener {
    */
   async start(): Promise<void> {
     this.isActive = true;
-    const connection = this.connectionManager.getConnection();
+    const connection = this.connectionManager.getSubscriptionConnection();
 
     const programs = [
       { name: 'Raydium AMM V4', id: RAYDIUM_AMM_V4 },
@@ -85,7 +85,7 @@ export class ProgramAccountListener extends BaseListener {
    * Unsubscribes from all program account subscriptions.
    */
   async stop(): Promise<void> {
-    const connection = this.connectionManager.getConnection();
+    const connection = this.connectionManager.getSubscriptionConnection();
     for (const subId of this.subscriptionIds) {
       try {
         await connection.removeProgramAccountChangeListener(subId);
