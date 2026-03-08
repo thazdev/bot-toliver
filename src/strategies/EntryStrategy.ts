@@ -131,9 +131,11 @@ export class EntryStrategy extends BaseStrategy {
       return false;
     }
 
-    if (ctx.volumeContext.buyTxLast60s < 2) {
+    const minBuys = cfg.minBuyTxLast60s ?? 2;
+    if (ctx.volumeContext.buyTxLast60s < minBuys) {
       logger.debug('EntryStrategy: insufficient buy volume', {
         buys: ctx.volumeContext.buyTxLast60s,
+        min: minBuys,
       });
       return false;
     }

@@ -12,6 +12,8 @@ export interface EntryConfig {
   solSizeMax: number;
   slippageTolerancePercent: number;
   maxPriceGainFromLaunch: number;
+  /** Mínimo de compras nos últimos 60s para passar no signal stack. Relaxado em FILTER_RELAX_FOR_DRY_RUN. */
+  minBuyTxLast60s?: number;
 }
 
 export interface ExitConfig {
@@ -697,8 +699,37 @@ const TIER_CONFIGS: Record<StrategyTier, TierConfig> = {
   aggressive: AGGRESSIVE,
 };
 
+const isDryRun = (): boolean =>
+  (process.env.BOT_DRY_RUN ?? process.env.DRY_RUN ?? 'true') !== 'false';
+
+export const shouldRelaxFiltersForDryRun = (): boolean =>
+  process.env.FILTER_RELAX_FOR_DRY_RUN === 'true' && isDryRun();
+
 export function getTierConfig(tier: StrategyTier): TierConfig {
-  return TIER_CONFIGS[tier];
+  const base = TIER_CONFIGS[tier];
+  if (!shouldRelaxFiltersForDryRun()) return base;
+
+  // Modo de teste: relaxa filtros para permitir simulações em dry run.
+  // Ative com FILTER_RELAX_FOR_DRY_RUN=true no .env
+  return {
+    ...base,
+    entry: {
+      ...base.entry,
+      minLiquiditySol: Math.min(base.entry.minLiquiditySol, 0.5),
+      minHolderCount: 0,
+      minEntryScore: Math.min(base.entry.minEntryScore, 15),
+      maxTopHolderPercent: Math.max(base.entry.maxTopHolderPercent, 100),
+      maxTop5HolderPercent: Math.max(base.entry.maxTop5HolderPercent, 100),
+      minBuyTxLast60s: 0,
+    },
+    filter: {
+      ...base.filter,
+      deferTokenAgeSec: 3,
+      minRugScoreStep3: 40,
+      minEntryScoreThreshold: 15,
+      feedbackMinSampleSize: 1,
+    },
+  };
 }
 
 export const TIME_EXIT_RULES = {

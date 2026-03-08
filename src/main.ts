@@ -46,7 +46,7 @@ import { LaunchStrategy } from './strategies/LaunchStrategy.js';
 import { ExitManager } from './strategies/ExitManager.js';
 import { StopLossManager } from './strategies/StopLossManager.js';
 import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
-import { getTierConfig } from './strategies/config.js';
+import { getTierConfig, shouldRelaxFiltersForDryRun } from './strategies/config.js';
 import { getEffectiveDryRun } from './config/DryRunResolver.js';
 import { isBotEnabled } from './config/BotEnabledResolver.js';
 import { AlertService } from './alerts/AlertService.js';
@@ -57,6 +57,7 @@ import { RugDetector } from './analysis/RugDetector.js';
 import { ScamDetector } from './analysis/ScamDetector.js';
 import { LiquidityAnalyzer } from './analysis/LiquidityAnalyzer.js';
 import { HolderAnalyzer } from './analysis/HolderAnalyzer.js';
+import { HolderVolumeFetcher } from './services/HolderVolumeFetcher.js';
 import { HoneypotChecker } from './analysis/HoneypotChecker.js';
 import { SmartMoneyTracker } from './analysis/SmartMoneyTracker.js';
 import { WhaleMonitor } from './analysis/WhaleMonitor.js';
@@ -88,6 +89,9 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   logger.info('Configuration loaded', { dryRun: config.bot.dryRun, logLevel: config.bot.logLevel });
+  if (shouldRelaxFiltersForDryRun()) {
+    logger.warn('FILTER_RELAX_FOR_DRY_RUN ativo — filtros relaxados para permitir simulações em dry run');
+  }
 
   DatabaseClient.initialize(config.database);
   const db = DatabaseClient.getInstance();
@@ -157,6 +161,7 @@ async function main(): Promise<void> {
   const scamDetector = new ScamDetector();
   const liquidityAnalyzer = new LiquidityAnalyzer(tier);
   const holderAnalyzer = new HolderAnalyzer(tier);
+  const holderVolumeFetcher = new HolderVolumeFetcher(config.solana.heliusRpcUrl);
   const honeypotChecker = new HoneypotChecker(tier);
   const smartMoneyTracker = new SmartMoneyTracker(tier);
   const whaleMonitor = new WhaleMonitor(tier);
@@ -210,19 +215,21 @@ async function main(): Promise<void> {
         : undefined);
       if (pool) {
         const tokenAgeSec = (Date.now() - tokenInfo.createdAt.getTime()) / 1000;
-        const defaultHolderData: HolderData = {
+        const { holderData: fetchedHolderData, fromApi } = await holderVolumeFetcher.fetchHolderData(tokenInfo.mintAddress);
+        const holderData: HolderData = fromApi ? fetchedHolderData : {
           holderCount: 0,
           topHolderPercent: 0,
           top5HolderPercent: 0,
           holderGrowthRate: 0,
           holdersDecreasing: false,
         };
+        const buyTxHeuristic = fromApi && holderData.holderCount >= 2 ? 2 : 0;
         const defaultVolumeContext: VolumeContext = {
           volume1min: 0,
           volume5minAvg: 0,
-          buyTxLast60s: 0,
+          buyTxLast60s: buyTxHeuristic,
           sellTxLast20: 0,
-          buyTxLast20: 0,
+          buyTxLast20: buyTxHeuristic,
           volumeStillActive: false,
           sellVolumeRatio: 0,
           largestSellPercent: 0,
@@ -308,7 +315,7 @@ async function main(): Promise<void> {
             : 0,
           priceChangePercent5min: 0,
           priceStdDev30min: 0,
-          holderData: defaultHolderData,
+          holderData,
           volumeContext: defaultVolumeContext,
           safetyData: defaultSafetyData,
           smartMoneyData: defaultSmartMoneyData,
