@@ -90,6 +90,11 @@ export class TradeExecutor {
     const slippageBps = tradeRequest.slippageBps;
 
     if (tradeRequest.dryRun) {
+      logger.info('DRY_RUN_INTERCEPTED', {
+        tokenMint: tradeRequest.tokenMint.slice(0, 12),
+        wouldBuy: tradeRequest.amountSol,
+      });
+
       const amountLamports = solToLamports(tradeRequest.amountSol).toNumber();
       const quote = tradeRequest.direction === 'buy'
         ? await this.jupiterClient.getBuyQuote(tradeRequest.tokenMint, amountLamports, slippageBps)

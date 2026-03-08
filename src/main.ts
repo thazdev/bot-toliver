@@ -492,10 +492,28 @@ async function main(): Promise<void> {
           return;
         }
 
+        logger.info('PIPELINE_PASSED', {
+          tokenMint: tokenInfo.mintAddress.slice(0, 12),
+          entryScore: filterOutcome.finalEntryScore,
+        });
+
         const results = await strategyRegistry.evaluateAll(context);
         const buySignal = strategyRegistry.getBestBuySignal(results);
 
+        logger.info('STRATEGY_SIGNAL', {
+          tokenMint: tokenInfo.mintAddress.slice(0, 12),
+          hasBuySignal: buySignal !== null,
+          confidence: buySignal?.confidence ?? 0,
+          strategyName: buySignal?.triggerType ?? 'none',
+        });
+
         const guardStatus = tradingGuard.evaluateToken(tokenInfo.mintAddress, context);
+
+        logger.info('GUARD_RESULT', {
+          tokenMint: tokenInfo.mintAddress.slice(0, 12),
+          canTrade: guardStatus.canTrade,
+          reason: guardStatus.reason ?? 'ok',
+        });
         if (!guardStatus.canTrade) {
           logger.info('TradingGuard blocked trade', {
             token: tokenInfo.mintAddress,
@@ -515,6 +533,15 @@ async function main(): Promise<void> {
           const sizeSol = positionSizer.calculatePositionSize(buySignal.confidence);
           const baseSize = sizeSol > 0 ? sizeSol : buySignal.suggestedSizeSol;
           const finalSize = baseSize * guardStatus.positionSizeMultiplier;
+          const minSize = getTierConfig(config.trading.strategyTier).sizing.minPositionSol;
+
+          logger.info('POSITION_SIZE', {
+            tokenMint: tokenInfo.mintAddress.slice(0, 12),
+            calculatedSize: sizeSol,
+            minSize,
+            blocked: sizeSol < minSize,
+          });
+
           const dryRun = await getEffectiveDryRun(config);
 
           const riskCheck = await riskManager.preTradeCheck({
@@ -527,6 +554,11 @@ async function main(): Promise<void> {
           });
 
           if (riskCheck.approved) {
+            logger.info('EXECUTING_TRADE', {
+              tokenMint: tokenInfo.mintAddress.slice(0, 12),
+              dryRun,
+              amountSOL: finalSize,
+            });
             logger.info('Trade aprovado — enfileirando compra', {
               tokenMint: tokenInfo.mintAddress.slice(0, 12),
               amountSol: finalSize.toFixed(4),
