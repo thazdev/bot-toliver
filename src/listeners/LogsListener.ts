@@ -61,6 +61,13 @@ export class LogsListener extends BaseListener {
         const subId = connection.onLogs(
           pubkey,
           (logs: Logs) => {
+            // PASSO 1: Log bruto ANTES de qualquer parsing — diagnóstico WebSocket
+            logger.info('RAW_LOG_RECEIVED', {
+              program: program.id,
+              signature: logs.signature,
+              logsCount: logs.logs?.length ?? 0,
+              firstLog: logs.logs?.[0]?.substring(0, 100),
+            });
             if (!this.isActive) return;
             void this.processLogs(program.name, logs);
           },
@@ -137,6 +144,16 @@ export class LogsListener extends BaseListener {
     const discovered = this.extractTokenFromLogs(logMessages);
     const source = programName.includes('CLMM') ? 'raydium_clmm' : 'raydium';
 
+    // PASSO 2: Log quando parse falha em detectar token
+    const hasToken = !!(discovered.tokenMint && discovered.tokenMint.length >= 32);
+    if (!hasToken) {
+      logger.info('LOG_PARSE_FAILED', {
+        program: programName,
+        logs: logMessages,
+        signature,
+      });
+    }
+
     await this.fetchBlockTimeAndEmit(signature, discovered, source, processStartMs);
   }
 
@@ -161,6 +178,16 @@ export class LogsListener extends BaseListener {
     let discovered = this.extractTokenFromProgramData(logMessages);
     if (!discovered.tokenMint) {
       discovered = this.extractTokenFromLogs(logMessages);
+    }
+
+    // PASSO 2: Log quando parse falha em detectar token
+    const hasToken = !!(discovered.tokenMint && discovered.tokenMint.length >= 32);
+    if (!hasToken) {
+      logger.info('LOG_PARSE_FAILED', {
+        program: 'Pump.fun',
+        logs: logMessages,
+        signature,
+      });
     }
 
     await this.fetchBlockTimeAndEmit(signature, discovered, 'pumpfun', processStartMs);

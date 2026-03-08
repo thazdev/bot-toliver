@@ -1,3 +1,4 @@
+import type { Connection } from '@solana/web3.js';
 import { loadConfig } from './config/index.js';
 import { loadQueueConfig } from './config/queue.config.js';
 import { logger } from './utils/logger.js';
@@ -87,12 +88,56 @@ let connectionsPaused = false;
 let botEnabledWatcherInterval: ReturnType<typeof setInterval> | null = null;
 let diagnosticsInterval: ReturnType<typeof setInterval> | null = null;
 
+/** PASSO 3: Teste de conectividade WebSocket isolado — escuta QUALQUER log na rede por 30s */
+async function testWebSocket(connection: Connection): Promise<void> {
+  logger.info('WS_TEST: Starting WebSocket connectivity test...');
+
+  let receivedAny = false;
+
+  const subId = connection.onLogs(
+    'all' as never,
+    (logs: { signature: string; logs?: string[] }) => {
+      if (!receivedAny) {
+        receivedAny = true;
+        logger.info('WS_TEST: WebSocket is working — first log received', {
+          signature: logs.signature,
+          program: logs.logs?.[0]?.substring(0, 50),
+        });
+      }
+    },
+    'processed',
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 30_000));
+  await connection.removeOnLogsListener(subId);
+
+  if (!receivedAny) {
+    logger.error('WS_TEST FAILED: No logs received in 30 seconds — WebSocket not working');
+    logger.error('Check: HELIUS_WS_URL is set correctly in .env');
+    logger.error('Check: The URL starts with wss:// not https://');
+  } else {
+    logger.info('WS_TEST PASSED: WebSocket connectivity confirmed');
+  }
+}
+
 async function main(): Promise<void> {
   (globalThis as { __botStartTime?: number }).__botStartTime = Date.now();
   logger.info(`Solana Trading Bot v${BOT_VERSION} starting...`);
 
   const config = loadConfig();
   logger.info('Configuration loaded', { dryRun: config.bot.dryRun, logLevel: config.bot.logLevel });
+
+  // PASSO 4: Verificação de variáveis de ambiente no boot
+  logger.info('ENV_CHECK', {
+    helius_rpc_set: !!process.env.HELIUS_RPC_URL,
+    helius_ws_set: !!process.env.HELIUS_WS_URL,
+    helius_ws_starts_with_wss: process.env.HELIUS_WS_URL?.startsWith('wss://'),
+    wallet_set: !!process.env.WALLET_PRIVATE_KEY,
+    dry_run: process.env.DRY_RUN,
+    strategy_tier: process.env.STRATEGY_TIER,
+    redis_connected: false,
+    mysql_connected: false,
+  });
   if (shouldRelaxFiltersForDryRun()) {
     logger.warn('FILTER_RELAX_FOR_DRY_RUN ativo — filtros relaxados para permitir simulações em dry run');
   }
@@ -118,6 +163,11 @@ async function main(): Promise<void> {
   const queueConfig = loadQueueConfig(config.redis);
   queueManager = new QueueManager(queueConfig);
   await queueManager.initialize();
+
+  logger.info('ENV_CHECK', {
+    redis_connected: true,
+    mysql_connected: true,
+  });
 
   workerManager = new WorkerManager(queueConfig);
 
@@ -657,6 +707,9 @@ async function main(): Promise<void> {
 
   const initiallyEnabled = await isBotEnabledNoCache();
   if (initiallyEnabled) {
+    // PASSO 3: Teste de WebSocket antes de iniciar listeners
+    await testWebSocket(connectionManager.getSubscriptionConnection());
+
     for (const listener of listeners) {
       await listener.start();
     }
