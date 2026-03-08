@@ -9,6 +9,9 @@ export const authConfig = {
       const isPublicPath = ['/login', '/setup', '/signup', '/api/auth', '/api/setup', '/api/signup', '/api/health', '/api/admin/reset-users'].some(
         (p: string) => nextUrl.pathname.startsWith(p),
       );
+      if (isLoggedIn && (nextUrl.pathname === '/login' || nextUrl.pathname === '/signup')) {
+        return Response.redirect(new URL('/', nextUrl));
+      }
       if (isPublicPath) return true;
       return isLoggedIn;
     },

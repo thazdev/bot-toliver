@@ -1,34 +1,43 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import { Bot, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
+  const { data: session, status } = useSession();
+  const searchParams = useSearchParams();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (status === 'authenticated' && session) {
+      window.location.href = '/';
+    }
+  }, [session, status]);
+
+  useEffect(() => {
+    const err = searchParams.get('error');
+    if (err === 'CredentialsSignin') setError('Credenciais inválidas');
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const res = await signIn('credentials', {
+    await signIn('credentials', {
       username,
       password,
-      redirect: false,
+      redirect: true,
+      callbackUrl: '/',
     });
 
     setLoading(false);
-
-    if (res?.error) {
-      setError('Credenciais inválidas');
-    } else {
-      window.location.href = '/';
-    }
   }
 
   return (
