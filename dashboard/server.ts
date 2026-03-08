@@ -27,6 +27,10 @@ ensureDatabase().then(() => app.prepare()).then(() => {
     path: '/api/socket',
     addTrailingSlash: false,
     cors: { origin: '*' },
+    transports: ['polling', 'websocket'],
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    upgradeTimeout: 30000,
   });
 
   initSocketHandlers(io);

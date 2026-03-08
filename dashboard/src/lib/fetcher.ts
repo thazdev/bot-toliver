@@ -1,5 +1,9 @@
 export const fetcher = (url: string) =>
-  fetch(url).then((r) => {
-    if (!r.ok) throw new Error(`API ${r.status}`);
-    return r.json();
+  fetch(url).then(async (r) => {
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = (json as { error?: string })?.error ?? `API ${r.status}`;
+      throw new Error(msg);
+    }
+    return json;
   });

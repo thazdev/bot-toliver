@@ -23,7 +23,10 @@ export async function GET(req: NextRequest) {
   }
 
   if (!walletAddress) {
-    return NextResponse.json({ sol: 0, usd: null }, { status: 500 });
+    return NextResponse.json(
+      { sol: 0, usd: null, error: 'Wallet não configurada. Defina BOT_WALLET_ADDRESS no Railway ou cadastre no usuário.' },
+      { status: 500 },
+    );
   }
 
   if (walletAddress.length > 50) {
@@ -48,7 +51,10 @@ export async function GET(req: NextRequest) {
 
   const heliusUrl = dashboardConfig.rpc.heliusUrl;
   if (!heliusUrl) {
-    return NextResponse.json({ sol: 0, usd: null }, { status: 500 });
+    return NextResponse.json(
+      { sol: 0, usd: null, error: 'HELIUS_RPC_URL não configurado no serviço do dashboard no Railway.' },
+      { status: 500 },
+    );
   }
 
   try {
@@ -65,7 +71,11 @@ export async function GET(req: NextRequest) {
 
     const json = await res.json();
     if (json.error || json.result == null) {
-      return NextResponse.json({ sol: 0, usd: null }, { status: 500 });
+      const rpcError = json.error?.message ?? json.error?.data ?? 'RPC retornou erro';
+      return NextResponse.json(
+        { sol: 0, usd: null, error: `RPC falhou: ${rpcError}` },
+        { status: 500 },
+      );
     }
     const lamports = json.result.value ?? 0;
     const sol = lamports / 1e9;
@@ -86,7 +96,8 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     return NextResponse.json(result);
-  } catch {
-    return NextResponse.json({ sol: 0, usd: null }, { status: 500 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Erro ao buscar saldo';
+    return NextResponse.json({ sol: 0, usd: null, error: msg }, { status: 500 });
   }
 }

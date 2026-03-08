@@ -66,7 +66,7 @@ export function Header() {
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-sm text-slate-400" title={session?.user?.walletAddress ? `Wallet: ${session.user.walletAddress}` : undefined}>
           <Wallet className="h-4 w-4 shrink-0" />
-          <span className="font-medium text-slate-200" title={balanceError && displaySol != null ? 'Atualização falhou, mostrando valor em cache' : undefined}>
+          <span className="font-medium text-slate-200" title={balanceError?.message}>
             {displaySol != null ? `${displaySol.toFixed(4)} SOL` : balanceError ? 'Erro' : '—'}
           </span>
         </div>

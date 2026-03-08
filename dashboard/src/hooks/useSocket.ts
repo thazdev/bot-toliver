@@ -13,7 +13,10 @@ export function useSocket() {
 
     const s = io({
       path: '/api/socket',
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      timeout: 20000,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
 
     s.on('connect', () => setSocket(s));
