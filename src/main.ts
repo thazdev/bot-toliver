@@ -1025,12 +1025,13 @@ async function main(): Promise<void> {
     statsSnapshot = new StatsSnapshot(statsTracker);
     statsSnapshot.start();
     startDiagnosticsInterval();
+    botHealthMonitor = BotHealthMonitor.initialize(tradingGuard);
+    botHealthMonitor.start();
 
-    // Marca lifecycle como RUNNING (sem rodar callbacks de start duplicados)
     (lifecycle as unknown as { state: string }).state = 'RUNNING';
     try {
       const redis = RedisClient.getInstance().getClient();
-      await redis.setex('bot:lifecycle_state', 120, 'RUNNING');
+      await redis.set('bot:lifecycle_state', 'RUNNING');
     } catch {}
   } else {
     setConnectionsPaused(true);

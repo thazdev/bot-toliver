@@ -195,7 +195,7 @@ export class BotLifecycle {
   private async writeState(): Promise<void> {
     try {
       const redis = RedisClient.getInstance().getClient();
-      await redis.setex(REDIS_STATE_KEY, 120, this.state);
+      await redis.set(REDIS_STATE_KEY, this.state);
     } catch {
       // Non-critical: dashboard pode ler bot:enabled como fallback
     }
