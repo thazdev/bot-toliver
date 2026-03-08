@@ -22,7 +22,10 @@ export class ConnectionManager {
   private constructor(solanaConfig: SolanaConfig, rateLimitConfig: RateLimitConfig) {
     this.rateLimiter = RateLimiter.initialize(rateLimitConfig);
     this.rpcFallback = new RpcFallback(solanaConfig.heliusRpcUrl, solanaConfig.fallbackRpcUrl);
-    this.subscriptionConnection = new Connection(solanaConfig.heliusWsUrl, 'processed');
+    this.subscriptionConnection = new Connection(solanaConfig.heliusRpcUrl, {
+      commitment: 'processed',
+      wsEndpoint: solanaConfig.heliusWsUrl,
+    });
 
     try {
       const keyBytes = Uint8Array.from(Buffer.from(solanaConfig.walletPrivateKey, 'base64'));
