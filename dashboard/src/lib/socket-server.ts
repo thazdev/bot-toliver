@@ -82,18 +82,18 @@ export function initSocketHandlers(io: Server) {
     } catch {}
   }, POSITION_UPDATE_INTERVAL);
 
-  // Poll bot health
+  // Poll bot health (status vem do bot via Redis, não do env)
   const healthInterval = setInterval(async () => {
     try {
       const raw = await redisClient.get('bot_health');
-      const isDryRun = process.env.BOT_DRY_RUN === 'true';
 
       if (raw) {
         const health = JSON.parse(raw);
+        const status = health.status ?? 'RUNNING';
         io.emit('bot_status', {
           id: `health-${Date.now()}`,
           type: 'alert',
-          message: `Bot status: ${isDryRun ? 'DRY RUN' : health.status ?? 'RUNNING'}`,
+          message: `Bot status: ${status}`,
           timestamp: new Date().toISOString(),
         });
       }

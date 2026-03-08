@@ -5,6 +5,8 @@ import { TradeExecutor } from '../execution/TradeExecutor.js';
 import { QueueManager } from '../core/queue/QueueManager.js';
 import { QueueName } from '../types/queue.types.js';
 import type { AlertJobPayload } from '../types/queue.types.js';
+import { getEffectiveDryRun } from '../config/DryRunResolver.js';
+import { loadConfig } from '../config/index.js';
 
 export type ExitSource =
   | 'StopLoss'
@@ -205,6 +207,8 @@ export class ExitDecisionEngine {
 
   private async executeSell(signal: ExitSignal): Promise<void> {
     try {
+      const config = loadConfig();
+      const dryRun = await getEffectiveDryRun(config);
       const result = await this.tradeExecutor.execute(
         {
           tokenMint: signal.tokenMint,
@@ -212,7 +216,7 @@ export class ExitDecisionEngine {
           amountSol: 0,
           slippageBps: 300,
           strategyId: `exit:${signal.source}`,
-          dryRun: false,
+          dryRun,
         },
         {
           positionId: signal.positionId,

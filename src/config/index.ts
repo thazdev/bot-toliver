@@ -41,7 +41,7 @@ export function loadConfig(): AppConfig {
     },
     bot: {
       logLevel: process.env.LOG_LEVEL ?? 'info',
-      dryRun: process.env.DRY_RUN !== 'false',
+      dryRun: (process.env.BOT_DRY_RUN ?? process.env.DRY_RUN ?? 'true') !== 'false',
     },
     alerts: {
       telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
