@@ -3,7 +3,26 @@ import { hash } from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { dashboardConfig } from '@/config/dashboard.config';
 
+async function ensureUsersTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS users (
+      id             INT AUTO_INCREMENT PRIMARY KEY,
+      username       VARCHAR(64)  NOT NULL UNIQUE,
+      password       VARCHAR(255) NOT NULL,
+      display_name   VARCHAR(128) NOT NULL,
+      wallet_address VARCHAR(64)  NOT NULL,
+      tier           VARCHAR(32)  NOT NULL DEFAULT 'admin',
+      created_at     DATETIME     NOT NULL DEFAULT NOW()
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+}
+
 export async function POST(req: NextRequest) {
+  try {
+    await prisma.user.count();
+  } catch {
+    await ensureUsersTable();
+  }
   const count = await prisma.user.count();
   if (count >= dashboardConfig.auth.maxUsers) {
     return NextResponse.json(
@@ -63,10 +82,20 @@ export async function GET() {
       currentUsers: count,
     });
   } catch (e) {
-    console.error('[signup GET]', e);
-    return NextResponse.json(
-      { canSignup: false, error: 'Database connection failed' },
-      { status: 503 },
-    );
+    try {
+      await ensureUsersTable();
+      const count = await prisma.user.count();
+      return NextResponse.json({
+        canSignup: count < dashboardConfig.auth.maxUsers,
+        maxUsers: dashboardConfig.auth.maxUsers,
+        currentUsers: count,
+      });
+    } catch (e2) {
+      console.error('[signup GET]', e2);
+      return NextResponse.json(
+        { canSignup: false, error: 'Database connection failed' },
+        { status: 503 },
+      );
+    }
   }
 }
