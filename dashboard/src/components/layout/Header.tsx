@@ -27,12 +27,14 @@ export function Header() {
 
   useEffect(() => {
     if (balance && !balanceError && balance.sol != null) {
-      setCachedSol(balance.sol);
-      try {
-        sessionStorage.setItem(BALANCE_CACHE_KEY, String(balance.sol));
-      } catch {}
+      if (balance.sol > 0 || cachedSol == null) {
+        setCachedSol(balance.sol);
+        try {
+          sessionStorage.setItem(BALANCE_CACHE_KEY, String(balance.sol));
+        } catch {}
+      }
     }
-  }, [balance, balanceError]);
+  }, [balance, balanceError, cachedSol]);
 
   useEffect(() => {
     try {

@@ -1,6 +1,7 @@
 import type { Server } from 'socket.io';
 import Redis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
+import { dashboardConfig } from '@/config/dashboard.config';
 
 const POSITION_UPDATE_INTERVAL = 10_000;
 const HEALTH_CHECK_INTERVAL = 15_000;
@@ -8,15 +9,21 @@ const HEALTH_CHECK_INTERVAL = 15_000;
 export function initSocketHandlers(io: Server) {
   const prisma = new PrismaClient();
 
-  const redisOpts = {
-    host: process.env.REDIS_HOST || '127.0.0.1',
-    port: Number(process.env.REDIS_PORT) || 6379,
-    password: process.env.REDIS_PASSWORD || undefined,
-    lazyConnect: true,
-  };
-
-  const redisClient = new Redis(redisOpts);
-  const redisSub = new Redis(redisOpts);
+  const redisClient = dashboardConfig.redis.url
+    ? new Redis(dashboardConfig.redis.url, { lazyConnect: true })
+    : new Redis({
+        host: dashboardConfig.redis.host,
+        port: dashboardConfig.redis.port,
+        password: dashboardConfig.redis.password,
+        lazyConnect: true,
+      });
+  const redisSub = dashboardConfig.redis.url
+    ? new Redis(dashboardConfig.redis.url)
+    : new Redis({
+        host: dashboardConfig.redis.host,
+        port: dashboardConfig.redis.port,
+        password: dashboardConfig.redis.password,
+      });
 
   redisClient.connect().catch(() => {});
   redisSub.connect().catch(() => {});

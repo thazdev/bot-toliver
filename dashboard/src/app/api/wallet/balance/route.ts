@@ -64,7 +64,10 @@ export async function GET(req: NextRequest) {
     });
 
     const json = await res.json();
-    const lamports = json.result?.value ?? 0;
+    if (json.error || json.result == null) {
+      return NextResponse.json({ sol: 0, usd: null }, { status: 500 });
+    }
+    const lamports = json.result.value ?? 0;
     const sol = lamports / 1e9;
 
     let usd: number | null = null;
