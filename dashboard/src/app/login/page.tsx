@@ -30,23 +30,16 @@ export default function LoginPage() {
     try {
       // redirect: true = servidor retorna 302 com Set-Cookie na mesma resposta.
       // Evita problema de cookie não ser enviado em navegação posterior (Railway/proxy).
-      const res = await signIn('credentials', {
+      const res = (await signIn('credentials', {
         username,
         password,
         redirect: true,
         callbackUrl: '/',
-      }) as { ok?: boolean; error?: string; status?: number; url?: string } | undefined;
+      })) as unknown as { ok?: boolean; error?: string; status?: number; url?: string } | undefined;
 
-      debugLog('2-SIGNIN-RESPONSE', {
-        ok: res?.ok,
-        error: res?.error,
-        status: res?.status,
-        url: res?.url,
-      });
-
+      debugLog('2-SIGNIN-RESPONSE', { ok: res?.ok, error: res?.error, status: res?.status, url: res?.url });
       setLoading(false);
 
-      // Com redirect: true, signIn não retorna em caso de sucesso (navega).
       if (res?.error) {
         debugLog('3-SIGNIN-ERROR', res.error);
         setError('Credenciais inválidas');
