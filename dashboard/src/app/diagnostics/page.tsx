@@ -85,6 +85,19 @@ function Stage2Breakdown({ reasons }: { reasons: Record<string, number> }) {
   );
 }
 
+function getBlockReasonShort(reason?: string): string {
+  if (!reason) return 'unknown';
+  const r = reason.toLowerCase();
+  if (r.includes('insufficient') || r.includes('capital') || r.includes('balance') || r.includes('saldo')) return 'saldo insuficiente';
+  if (r.includes('max open positions') || r.includes('max positions')) return 'max posições atingido';
+  if (r.includes('daily risk') || r.includes('daily loss') || r.includes('risk budget')) return 'daily loss';
+  if (r.includes('exposure') || r.includes('exceed max')) return 'exposição excedida';
+  if (r.includes('circuit breaker') || r.includes('tripped')) return 'circuit breaker';
+  if (r.includes('cooldown')) return 'cooldown';
+  if (r.includes('already have') || r.includes('open position')) return 'posição já aberta';
+  return reason.length > 35 ? `${reason.slice(0, 32)}…` : reason;
+}
+
 function PassedTokensTable({ tokens }: { tokens: DiagnosticsResponse['last_passed_tokens'] }) {
   return (
     <div className="overflow-x-auto">
@@ -127,7 +140,9 @@ function PassedTokensTable({ tokens }: { tokens: DiagnosticsResponse['last_passe
                     🔵 DRY RUN
                   </span>
                 ) : t.hasBuySignal ? (
-                  <span className="text-warning">❌ bloqueado</span>
+                  <span className="text-warning" title={t.tradeBlockReason ?? 'bloqueado'}>
+                    ❌ bloqueado ({getBlockReasonShort(t.tradeBlockReason)})
+                  </span>
                 ) : (
                   <span className="text-slate-500">—</span>
                 )}

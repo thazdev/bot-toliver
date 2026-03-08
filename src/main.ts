@@ -587,18 +587,39 @@ async function main(): Promise<void> {
           });
         }
         if (!guardStatus.canTrade) {
+          const blockReason = guardStatus.reason ?? 'TradingGuard';
+          logger.info('TRADE_BLOCKED_REASON', {
+            tokenMint,
+            source: 'TradingGuard',
+            reason: blockReason,
+          });
+          try {
+            const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
+            const updated = rawList.map((s) => {
+              try {
+                const obj = JSON.parse(s) as { mint: string; tradeBlockReason?: string };
+                if (obj.mint === tokenMint) {
+                  return JSON.stringify({ ...obj, tradeBlockReason: blockReason });
+                }
+                return s;
+              } catch {
+                return s;
+              }
+            });
+            if (updated.some((s, i) => s !== rawList[i])) {
+              await redis.del('diag:passed_tokens_log');
+              for (let i = updated.length - 1; i >= 0; i--) {
+                await redis.lpush('diag:passed_tokens_log', updated[i]);
+              }
+            }
+          } catch (_) {}
           if (isDebugToken) {
             logger.info('=== FULL_TRACE_TOKEN ===', {
               tokenMint: tokenMint.slice(0, 12),
               pipeline: 'PASSED',
               hasBuySignal: buySignal !== null,
-              buySignalConfidence: buySignal?.confidence,
               guardCanTrade: guardStatus.canTrade,
               guardReason: guardStatus.reason,
-              positionSize: undefined,
-              positionBlocked: undefined,
-              riskApproved: undefined,
-              riskReason: undefined,
               executingTrade: false,
             });
             logger.info('=== END_TRACE ===');
@@ -686,16 +707,48 @@ async function main(): Promise<void> {
               entryScore: filterOutcome.finalEntryScore,
             } satisfies TradeExecuteJobPayload);
           } else {
+            const openPositions = positionManager.getOpenPositions();
+            const maxPositions = getTierConfig(config.trading.strategyTier).sizing.maxConcurrentPositions;
+            const availableCapital = exposureTracker.getAvailableCapital();
+            const totalExposure = exposureTracker.getTotalExposure();
+            logger.info('TRADE_BLOCKED_REASON', {
+              tokenMint,
+              riskApproved: riskCheck.approved,
+              riskReason: riskCheck.reason,
+              positionSize: sizeSol,
+              positionBlocked: sizeSol < minSize,
+              hotWalletBalance: availableCapital,
+              totalExposure,
+              openPositionsCount: openPositions.length,
+              maxOpenPositions: maxPositions,
+              dryRun,
+            });
+            try {
+              const blockReason = riskCheck.reason ?? 'unknown';
+              const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
+              const updated = rawList.map((s) => {
+                try {
+                  const obj = JSON.parse(s) as { mint: string; tradeBlockReason?: string };
+                  if (obj.mint === tokenMint) {
+                    return JSON.stringify({ ...obj, tradeBlockReason: blockReason });
+                  }
+                  return s;
+                } catch {
+                  return s;
+                }
+              });
+              if (updated.some((s, i) => s !== rawList[i])) {
+                await redis.del('diag:passed_tokens_log');
+                for (let i = updated.length - 1; i >= 0; i--) {
+                  await redis.lpush('diag:passed_tokens_log', updated[i]);
+                }
+              }
+            } catch (_) {}
             if (isDebugToken) {
               logger.info('=== FULL_TRACE_TOKEN ===', {
                 tokenMint: tokenMint.slice(0, 12),
                 pipeline: 'PASSED',
                 hasBuySignal: true,
-                buySignalConfidence: buySignal.confidence,
-                guardCanTrade: guardStatus.canTrade,
-                guardReason: guardStatus.reason ?? 'ok',
-                positionSize: sizeSol,
-                positionBlocked: sizeSol < minSize,
                 riskApproved: riskCheck.approved,
                 riskReason: riskCheck.reason,
                 executingTrade: false,
@@ -776,6 +829,34 @@ async function main(): Promise<void> {
     const riskCheck = await riskManager.preTradeCheck(payload.tradeRequest);
 
     if (!riskCheck.approved) {
+      const blockReason = riskCheck.reason ?? 'unknown';
+      logger.info('TRADE_BLOCKED_REASON', {
+        tokenMint: payload.tradeRequest.tokenMint,
+        source: 'TRADE_EXECUTE_worker',
+        riskReason: blockReason,
+        dryRun: payload.tradeRequest.dryRun,
+      });
+      try {
+        const redis = RedisClient.getInstance().getClient();
+        const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
+        const updated = rawList.map((s) => {
+          try {
+            const obj = JSON.parse(s) as { mint: string; tradeBlockReason?: string };
+            if (obj.mint === payload.tradeRequest.tokenMint) {
+              return JSON.stringify({ ...obj, tradeBlockReason: blockReason });
+            }
+            return s;
+          } catch {
+            return s;
+          }
+        });
+        if (updated.some((s, i) => s !== rawList[i])) {
+          await redis.del('diag:passed_tokens_log');
+          for (let i = updated.length - 1; i >= 0; i--) {
+            await redis.lpush('diag:passed_tokens_log', updated[i]);
+          }
+        }
+      } catch (_) {}
       statsTracker.incrementTradesBlocked();
       logger.warn('Trade rejected by risk manager', { reason: riskCheck.reason });
       return;

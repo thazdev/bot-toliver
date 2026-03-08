@@ -41,6 +41,7 @@ export interface DiagnosticsResponse {
     hasBuySignal: boolean;
     skipReasons: string[];
     tradeExecuted: boolean;
+    tradeBlockReason?: string;
     timestamp: string;
   }>;
   bot_health: Record<string, unknown> | null;
@@ -128,6 +129,7 @@ export async function GET() {
         hasBuySignal: boolean;
         skipReasons: string[];
         tradeExecuted: boolean;
+        tradeBlockReason?: string;
         timestamp: string;
       };
       return {
@@ -138,6 +140,7 @@ export async function GET() {
         hasBuySignal: o.hasBuySignal ?? false,
         skipReasons: Array.isArray(o.skipReasons) ? o.skipReasons : [],
         tradeExecuted: o.tradeExecuted ?? false,
+        tradeBlockReason: o.tradeBlockReason,
         timestamp: o.timestamp ?? new Date().toISOString(),
       };
     } catch {
@@ -149,6 +152,7 @@ export async function GET() {
         hasBuySignal: false,
         skipReasons: [] as string[],
         tradeExecuted: false,
+        tradeBlockReason: undefined,
         timestamp: new Date().toISOString(),
       };
     }
