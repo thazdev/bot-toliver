@@ -184,7 +184,7 @@ function DiagnosticsEventFeed({ filter }: { filter: EventFilter }) {
 
   const filtered = events.filter((e) => {
     if (filter === 'all') return true;
-    if (filter === 'trades') return e.type === 'buy' || e.type === 'sell' || e.type === 'DRY_RUN_TRADE';
+    if (filter === 'trades') return e.type === 'buy' || e.type === 'sell' || e.type === 'DRY_RUN_TRADE' || e.type === 'DRY_RUN_BUY' || e.type === 'DRY_RUN_SELL';
     if (filter === 'rejected') return e.type?.toLowerCase().includes('reject');
     if (filter === 'errors') return e.type?.toLowerCase().includes('error');
     return true;
@@ -201,8 +201,10 @@ function DiagnosticsEventFeed({ filter }: { filter: EventFilter }) {
             key={ev.id}
             className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors hover:bg-white/[0.03]"
           >
-            {ev.type === 'DRY_RUN_TRADE' ? (
+            {ev.type === 'DRY_RUN_TRADE' || ev.type === 'DRY_RUN_BUY' ? (
               <span className="text-accent">🔵</span>
+            ) : ev.type === 'DRY_RUN_SELL' ? (
+              <span className="text-warning">🔴</span>
             ) : ev.type === 'buy' ? (
               <span className="text-success">↓</span>
             ) : ev.type === 'sell' ? (

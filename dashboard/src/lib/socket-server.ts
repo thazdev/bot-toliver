@@ -44,17 +44,32 @@ export function initSocketHandlers(io: Server) {
         return;
       }
       if (channel === 'bot:events') {
-        const data = JSON.parse(message) as { type?: string; tokenMint?: string; amountSOL?: number; timestamp?: string };
+        const data = JSON.parse(message) as {
+          type?: string;
+          tokenMint?: string;
+          amountSOL?: number;
+          timestamp?: string;
+          openPositions?: unknown[];
+          closedPositions?: unknown[];
+          summary?: unknown;
+        };
         const evType = data.type ?? 'bot_event';
-        io.emit('bot_event', {
+        const payload = {
           id: `bot-${evType}-${Date.now()}`,
           type: evType,
-          message: evType === 'DRY_RUN_TRADE'
-            ? `DRY RUN: ${(data.amountSOL ?? 0).toFixed(4)} SOL em ${(data.tokenMint ?? '').slice(0, 8)}...`
-            : JSON.stringify(data),
+          message:
+            evType === 'DRY_RUN_BUY'
+              ? `DRY RUN BUY: ${(data.amountSOL ?? 0).toFixed(4)} SOL em ${(data.tokenMint ?? '').slice(0, 8)}...`
+              : evType === 'DRY_RUN_SELL'
+                ? `DRY RUN SELL: ${(data.tokenMint ?? '').slice(0, 8)}... P&L ${(data as { pnlPct?: string }).pnlPct ?? '?'}%`
+                : JSON.stringify(data),
           timestamp: data.timestamp ?? new Date().toISOString(),
           data,
-        });
+        };
+        io.emit('bot_event', payload);
+        if (evType === 'DRY_RUN_BUY') io.emit('dry_run_buy', data);
+        if (evType === 'DRY_RUN_UPDATE') io.emit('dry_run_update', data);
+        if (evType === 'DRY_RUN_SELL') io.emit('dry_run_sell', data);
       }
     } catch {}
   });

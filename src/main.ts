@@ -68,7 +68,7 @@ import { MarketSentiment } from './analysis/MarketSentiment.js';
 import { TradingGuard } from './risk/TradingGuard.js';
 import { TrailingStopStrategy } from './strategies/TrailingStopStrategy.js';
 import { TradeFilterPipeline } from './strategies/TradeFilterPipeline.js';
-import { startDryRunPositionMonitor } from './workers/DryRunPositionMonitor.js';
+import { startDryRunPositionMonitor, stopDryRunPositionMonitor } from './workers/DryRunPositionMonitor.js';
 import { ExitDecisionEngine } from './trading/ExitDecisionEngine.js';
 import { TransactionManager } from './trading/TransactionManager.js';
 import { StateReconciler } from './trading/StateReconciler.js';
@@ -1066,7 +1066,7 @@ async function main(): Promise<void> {
 
   positionTracker.start();
 
-  startDryRunPositionMonitor();
+  startDryRunPositionMonitor({ poolScanner });
 
   statsSnapshot = new StatsSnapshot(statsTracker);
   statsSnapshot.start();
@@ -1188,6 +1188,8 @@ async function shutdown(signal: string): Promise<void> {
     if (statsSnapshot) {
       statsSnapshot.stop();
     }
+
+    stopDryRunPositionMonitor();
 
     if (workerManager) {
       await workerManager.shutdown();

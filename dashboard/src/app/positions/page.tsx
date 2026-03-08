@@ -1,13 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import useSWR from 'swr';
 import { Search, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GlowNumber } from '@/components/ui/GlowNumber';
 import { fetcher } from '@/lib/fetcher';
+import { useSocket } from '@/hooks/useSocket';
 import type { PositionHistoryResponse, DryRunOpenPosition, DryRunClosedPosition } from '@/types';
+
+interface DryRunSummary {
+  totalCapitalSOL: number;
+  capitalInUse: number;
+  capitalInUsePct?: number;
+  availableCapital: number;
+  totalPnlSOL: number;
+  winRate: number;
+  bestTrade?: number;
+  worstTrade?: number;
+  avgHoldMin?: number;
+  openCount?: number;
+  closedCount?: number;
+}
 
 function formatDuration(ms: number) {
   const m = Math.floor(ms / 60_000);
@@ -49,6 +64,11 @@ export default function PositionsPage() {
   const [token, setToken] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [openPositions, setOpenPositions] = useState<DryRunOpenPosition[]>([]);
+  const [closedPositions, setClosedPositions] = useState<DryRunClosedPosition[]>([]);
+  const [drySummary, setDrySummary] = useState<DryRunSummary | null>(null);
+
+  const socket = useSocket();
 
   const params = new URLSearchParams({ page: String(page), pageSize: '20' });
   if (status) params.set('status', status);
@@ -59,21 +79,107 @@ export default function PositionsPage() {
   const { data: health } = useSWR<{ status: string }>('/api/health', fetcher, { refreshInterval: 10_000 });
   const isDryRun = health?.status === 'DRY_RUN';
 
-  const { data: drySummary } = useSWR(
+  const pollInterval = socket ? 0 : 10_000;
+  const { data: summaryRes } = useSWR(
     isDryRun ? '/api/positions/dry-run/summary' : null,
     fetcher,
-    { refreshInterval: 10_000 },
+    { refreshInterval: pollInterval },
   );
-  const { data: dryOpen } = useSWR<{ positions: DryRunOpenPosition[] }>(
+  const { data: openRes } = useSWR<{ positions: DryRunOpenPosition[] }>(
     isDryRun ? '/api/positions/dry-run/open' : null,
     fetcher,
-    { refreshInterval: 10_000 },
+    { refreshInterval: pollInterval },
   );
-  const { data: dryClosed } = useSWR<{ positions: DryRunClosedPosition[] }>(
+  const { data: closedRes } = useSWR<{ positions: DryRunClosedPosition[] }>(
     isDryRun ? '/api/positions/dry-run/closed' : null,
     fetcher,
-    { refreshInterval: 10_000 },
+    { refreshInterval: pollInterval },
   );
+
+  const applyFallbackData = useCallback(() => {
+    if (summaryRes) setDrySummary(summaryRes);
+    if (openRes?.positions) setOpenPositions(openRes.positions);
+    if (closedRes?.positions) setClosedPositions(closedRes.positions);
+  }, [summaryRes, openRes, closedRes]);
+
+  useEffect(() => {
+    applyFallbackData();
+  }, [applyFallbackData]);
+
+  useEffect(() => {
+    if (!socket || !isDryRun) return;
+    const onUpdate = (data: {
+      openPositions?: DryRunOpenPosition[];
+      closedPositions?: DryRunClosedPosition[];
+      summary?: DryRunSummary;
+    }) => {
+      if (data.openPositions) setOpenPositions(data.openPositions);
+      if (data.closedPositions) setClosedPositions(data.closedPositions);
+      if (data.summary) setDrySummary(data.summary);
+    };
+    const onBuy = (data: { tokenMint: string; amountSOL: number; entryPrice: number; positionId?: string }) => {
+      setOpenPositions((prev) => {
+        const newPos: DryRunOpenPosition = {
+          id: data.positionId ?? `dry_${Date.now()}`,
+          tokenMint: data.tokenMint,
+          entryPrice: data.entryPrice,
+          entryTime: new Date().toISOString(),
+          amountSOL: data.amountSOL,
+          amountTokens: data.entryPrice > 0 ? data.amountSOL / data.entryPrice : 0,
+          entryScore: 0,
+          strategy: '',
+          tier: '',
+          stopLossPrice: data.entryPrice * 0.85,
+          tp1Price: data.entryPrice * 1.5,
+          tp2Price: data.entryPrice * 2,
+          tp3Price: data.entryPrice * 2.5,
+          trailingStopPrice: null,
+          peakPrice: data.entryPrice,
+          currentPrice: data.entryPrice,
+          currentPnlPct: 0,
+          currentPnlSOL: 0,
+          status: 'open',
+        };
+        return [newPos, ...prev];
+      });
+    };
+    const onSell = (data: {
+      tokenMint: string;
+      exitReason: string;
+      pnlPct: string;
+      pnlSOL: string;
+      amountSOL: number;
+      entryPrice: number;
+      exitPrice: number;
+    }) => {
+      setOpenPositions((prev) => prev.filter((p) => p.tokenMint !== data.tokenMint));
+      setClosedPositions((prev) => [
+        {
+          id: `closed_${Date.now()}`,
+          tokenMint: data.tokenMint,
+          entryPrice: data.entryPrice,
+          exitPrice: data.exitPrice,
+          entryTime: '',
+          exitTime: new Date().toISOString(),
+          amountSOL: data.amountSOL,
+          entryScore: 0,
+          strategy: '',
+          exitReason: data.exitReason,
+          finalPnlPct: parseFloat(data.pnlPct) || 0,
+          finalPnlSOL: parseFloat(data.pnlSOL) || 0,
+        },
+        ...prev,
+      ]);
+    };
+    socket.on('dry_run_update', onUpdate);
+    socket.on('dry_run_buy', onBuy);
+    socket.on('dry_run_sell', onSell);
+    return () => {
+      socket.off('dry_run_update', onUpdate);
+      socket.off('dry_run_buy', onBuy);
+      socket.off('dry_run_sell', onSell);
+    };
+  }, [socket, isDryRun]);
 
   const { data } = useSWR<PositionHistoryResponse>(
     `/api/positions/history?${params}`,
@@ -85,9 +191,6 @@ export default function PositionsPage() {
   const totalPages = Math.ceil((data?.total ?? 0) / (data?.pageSize ?? 20));
   const summary = data?.summary;
 
-  const openPositions = dryOpen?.positions ?? [];
-  const closedPositions = dryClosed?.positions ?? [];
-
   return (
     <DashboardShell>
       <h1 className="mb-6 text-lg font-bold text-white">Posições</h1>
@@ -98,14 +201,14 @@ export default function PositionsPage() {
             <h2 className="mb-3 text-sm font-semibold text-slate-300">Dry Run — Resumo</h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               {[
-                { label: 'Capital Total', val: drySummary.totalCapitalSOL, dec: 2, suffix: ' SOL', neutral: true },
-                { label: 'Capital em Uso', val: drySummary.capitalInUse, dec: 4, suffix: ` SOL (${drySummary.capitalInUsePct?.toFixed(1) ?? 0}%)`, neutral: true },
-                { label: 'Disponível', val: drySummary.availableCapital, dec: 4, suffix: ' SOL', neutral: true },
-                { label: 'P&L Simulado', val: drySummary.totalPnlSOL, dec: 4, suffix: ' SOL' },
-                { label: 'Win Rate', val: drySummary.winRate, dec: 1, suffix: '%', neutral: true },
-                { label: 'Melhor Trade', val: drySummary.bestTrade, dec: 2, suffix: '%' },
-                { label: 'Pior Trade', val: drySummary.worstTrade, dec: 2, suffix: '%' },
-                { label: 'Hold Médio', val: drySummary.avgHoldMin, dec: 1, suffix: ' min', neutral: true },
+                { label: 'Capital Total', val: drySummary.totalCapitalSOL ?? 0, dec: 2, suffix: ' SOL', neutral: true },
+                { label: 'Capital em Uso', val: drySummary.capitalInUse ?? 0, dec: 4, suffix: ` SOL (${drySummary.capitalInUsePct?.toFixed(1) ?? 0}%)`, neutral: true },
+                { label: 'Disponível', val: drySummary.availableCapital ?? 0, dec: 4, suffix: ' SOL', neutral: true },
+                { label: 'P&L Simulado', val: drySummary.totalPnlSOL ?? 0, dec: 4, suffix: ' SOL' },
+                { label: 'Win Rate', val: drySummary.winRate ?? 0, dec: 1, suffix: '%', neutral: true },
+                { label: 'Melhor Trade', val: drySummary.bestTrade ?? 0, dec: 2, suffix: '%' },
+                { label: 'Pior Trade', val: drySummary.worstTrade ?? 0, dec: 2, suffix: '%' },
+                { label: 'Hold Médio', val: drySummary.avgHoldMin ?? 0, dec: 1, suffix: ' min', neutral: true },
               ].map((s) => (
                 <GlassCard key={s.label} className="py-3">
                   <p className="text-[10px] uppercase tracking-wider text-slate-500">{s.label}</p>
@@ -118,7 +221,9 @@ export default function PositionsPage() {
           </div>
 
           <div className="mb-6">
-            <h2 className="mb-3 text-sm font-semibold text-slate-300">Posições Abertas (atualiza 10s)</h2>
+            <h2 className="mb-3 text-sm font-semibold text-slate-300">
+              Posições Abertas {socket ? '(tempo real)' : '(polling 10s)'}
+            </h2>
             <GlassCard className="overflow-hidden p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">

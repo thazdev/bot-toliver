@@ -54,12 +54,6 @@ export class TradeExecutor {
 
   async execute(tradeRequest: TradeRequest, options?: ExecuteOptions): Promise<TradeResult> {
     const startTime = Date.now();
-    logger.info('TradeExecutor: starting trade', {
-      tokenMint: tradeRequest.tokenMint,
-      direction: tradeRequest.direction,
-      amountSol: tradeRequest.amountSol,
-      dryRun: tradeRequest.dryRun,
-    });
 
     try {
       if (tradeRequest.direction === 'buy') {
@@ -120,24 +114,6 @@ export class TradeExecutor {
         priceSource = 'fallback';
       }
 
-      logger.info('DRY_RUN_ENTRY_PRICE', {
-        tokenMint: tradeRequest.tokenMint,
-        entryPrice,
-        amountSOL: finalSize,
-        estimatedTokens: finalSize / entryPrice,
-        priceSource,
-      });
-
-      try {
-        const debugToken = await RedisClient.getInstance().getClient().get('debug:last_passed_token');
-        if (debugToken && tradeRequest.tokenMint === debugToken) {
-          logger.info('DEBUG_TRACE: DRY_RUN_INTERCEPTED', {
-            tokenMint: tradeRequest.tokenMint.slice(0, 12),
-            wouldBuy: finalSize,
-          });
-        }
-      } catch (_) {}
-
       // DRY RUN: simular quote sem chamar Jupiter (valores compatíveis com DB)
       const amountLamports = solToLamports(finalSize).toNumber();
       const amountSol = finalSize;
@@ -162,12 +138,10 @@ export class TradeExecutor {
               routePlan: [] as unknown[],
             };
 
-      logger.info('🔵 DRY RUN TRADE — would have executed (quote simulated)', {
-        direction: tradeRequest.direction,
+      logger.info('DRY_RUN_BUY', {
         tokenMint: tradeRequest.tokenMint,
         amountSOL: finalSize,
         entryPrice,
-        reason: 'dry_run_simulated',
       });
 
       const result = this.buildTradeResult(
@@ -182,12 +156,12 @@ export class TradeExecutor {
       // Salvar posição completa no Redis para monitoramento
       if (tradeRequest.direction === 'buy') {
         const dryRunPosition: DryRunPosition = {
-          id: `dry_${Date.now()}`,
+          id: `dry_${Date.now()}_${tradeRequest.tokenMint.slice(0, 8)}`,
           tokenMint: tradeRequest.tokenMint,
           entryPrice,
           entryTime: new Date().toISOString(),
           amountSOL: finalSize,
-          amountTokens: finalSize / entryPrice,
+          amountTokens: entryPrice > 0 ? finalSize / entryPrice : 0,
           entryScore,
           strategy: tradeRequest.strategyId,
           tier: this.config.trading.strategyTier,
@@ -203,23 +177,23 @@ export class TradeExecutor {
           status: 'open',
         };
         await saveDryRunPosition(dryRunPosition);
-      }
 
-      // Publicar no Redis para o dashboard
-      try {
-        const redis = RedisClient.getInstance().getClient();
-        await redis.publish(
-          'bot:events',
-          JSON.stringify({
-            type: 'DRY_RUN_TRADE',
-            tokenMint: tradeRequest.tokenMint,
-            amountSOL: finalSize,
-            entryScore,
-            entryPrice,
-            timestamp: new Date().toISOString(),
-          }),
-        );
-        const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
+        // Publicar no Redis para o dashboard (Socket.io)
+        try {
+          const redis = RedisClient.getInstance().getClient();
+          await redis.publish(
+            'bot:events',
+            JSON.stringify({
+              type: 'DRY_RUN_BUY',
+              tokenMint: tradeRequest.tokenMint,
+              amountSOL: finalSize,
+              entryScore,
+              entryPrice,
+              positionId: dryRunPosition.id,
+              timestamp: new Date().toISOString(),
+            }),
+          );
+          const rawList = await redis.lrange('diag:passed_tokens_log', 0, 49);
         const updated = rawList.map((s) => {
           try {
             const obj = JSON.parse(s) as { mint: string; tradeExecuted?: boolean };
@@ -237,7 +211,8 @@ export class TradeExecutor {
             await redis.lpush('diag:passed_tokens_log', updated[i]);
           }
         }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       return result;
     }
