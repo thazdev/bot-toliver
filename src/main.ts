@@ -81,6 +81,7 @@ let botHealthMonitor: BotHealthMonitor;
 let tradingGuard: TradingGuard;
 
 async function main(): Promise<void> {
+  (globalThis as { __botStartTime?: number }).__botStartTime = Date.now();
   logger.info(`Solana Trading Bot v${BOT_VERSION} starting...`);
 
   const config = loadConfig();

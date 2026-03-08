@@ -1,11 +1,11 @@
 export const dashboardConfig = {
   database: { url: process.env.DATABASE_URL! },
   redis: {
-    host: process.env.REDIS_HOST || '127.0.0.1',
-    port: Number(process.env.REDIS_PORT) || 6379,
-    password: process.env.REDIS_PASSWORD || undefined,
+    host: process.env.REDIS_HOST || process.env.REDISHOST || '127.0.0.1',
+    port: Number(process.env.REDIS_PORT || process.env.REDISPORT) || 6379,
+    password: process.env.REDIS_PASSWORD || process.env.REDISPASSWORD || undefined,
   },
-  rpc: { heliusUrl: process.env.HELIUS_RPC_URL! },
+  rpc: { heliusUrl: process.env.HELIUS_RPC_URL || process.env.HELIUS_RPC_URI || '' },
   auth: {
     secret: process.env.NEXTAUTH_SECRET!,
     maxUsers: 2,

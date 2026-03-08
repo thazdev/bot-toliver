@@ -1,8 +1,10 @@
 import { logger } from '../utils/logger.js';
 import { RedisClient } from '../core/cache/RedisClient.js';
 import type { TradingGuard } from '../risk/TradingGuard.js';
+import { getEffectiveDryRun } from '../config/DryRunResolver.js';
+import { loadConfig } from '../config/index.js';
 
-const BOT_HEALTH_CHECK_MS = parseInt(process.env.BOT_HEALTH_CHECK_MS ?? '15000', 10);
+const BOT_HEALTH_CHECK_MS = parseInt(process.env.BOT_HEALTH_CHECK_MS ?? '10000', 10);
 const HEALTH_WARNING_MS = parseInt(process.env.HEALTH_WARNING_MS ?? '60000', 10);
 const HEALTH_CRITICAL_MS = parseInt(process.env.HEALTH_CRITICAL_MS ?? '300000', 10);
 
@@ -43,6 +45,7 @@ export class BotHealthMonitor {
   }
 
   start(): void {
+    this.writeDashboardHeartbeat().catch(() => {});
     this.healthCheckInterval = setInterval(() => {
       this.performHealthCheck();
     }, BOT_HEALTH_CHECK_MS);
@@ -63,7 +66,9 @@ export class BotHealthMonitor {
     logger.info('BotHealthMonitor: stopped');
   }
 
-  private performHealthCheck(): void {
+  private async performHealthCheck(): Promise<void> {
+    await this.writeDashboardHeartbeat();
+
     const elapsed = Date.now() - this.lastEventProcessedAt;
 
     if (elapsed > HEALTH_CRITICAL_MS) {
@@ -82,6 +87,26 @@ export class BotHealthMonitor {
         warningThresholdMs: HEALTH_WARNING_MS,
         hint: 'WebSocket may be disconnected or network is slow',
       });
+    }
+  }
+
+  private async writeDashboardHeartbeat(): Promise<void> {
+    try {
+      const config = loadConfig();
+      const dryRun = await getEffectiveDryRun(config);
+      const redis = RedisClient.getInstance().getClient();
+      const startTime = (globalThis as { __botStartTime?: number }).__botStartTime ?? Date.now();
+      const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+
+      const payload = {
+        status: dryRun ? 'DRY_RUN' : 'RUNNING',
+        lastHeartbeat: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
+        uptimeSeconds,
+      };
+      await redis.setex('bot_health', 60, JSON.stringify(payload));
+    } catch (err) {
+      logger.debug('Dashboard heartbeat write failed', { err: String(err) });
     }
   }
 
