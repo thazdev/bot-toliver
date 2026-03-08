@@ -81,7 +81,20 @@ export class MigrationRunner {
           .filter((s) => s.length > 0);
 
         for (const statement of statements) {
-          await this.db.execute(statement);
+          try {
+            await this.db.execute(statement);
+          } catch (stmtErr: unknown) {
+            const code = (stmtErr as { code?: string }).code;
+            if (code === 'ER_DUP_FIELDNAME' || code === 'ER_DUP_COLUMN') {
+              logger.debug('Migration: column already exists, skipping', { file, code });
+              continue;
+            }
+            if (code === 'ER_TABLE_EXISTS_ERROR') {
+              logger.debug('Migration: table already exists, skipping', { file, code });
+              continue;
+            }
+            throw stmtErr;
+          }
         }
 
         await this.db.execute(
