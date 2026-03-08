@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { Bot, Loader2 } from 'lucide-react';
 
-export default function LoginPage() {
+function LoginForm() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const [username, setUsername] = useState('');
@@ -91,5 +91,17 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-slate-400">Carregando…</p>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
