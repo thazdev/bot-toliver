@@ -78,21 +78,8 @@ export class LiquidityListener extends BaseListener {
       logger.debug('Liquidity add detected', { program: programName, signature });
     }
 
-    this.onEvent({
-      type: 'POOL_CREATED',
-      timestamp: Date.now(),
-      data: {
-        poolAddress: '',
-        tokenMint: '',
-        quoteMint: WSOL_MINT,
-        dex: programName === 'Raydium' ? 'raydium' : 'pumpfun',
-        liquidity: 0,
-        price: 0,
-        volume24h: 0,
-        createdAt: new Date(),
-        isActive: true,
-      },
-    });
+    // Não emite POOL_CREATED sem tokenMint — evita flood de "ignorado" no BaseListener.
+    // LogsListener e PumpFunListener já cobrem criação de tokens.
   }
 
   /**

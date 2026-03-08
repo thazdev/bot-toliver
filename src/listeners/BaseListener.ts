@@ -10,6 +10,8 @@ import { isBotEnabled } from '../config/BotEnabledResolver.js';
  * Provides common lifecycle management and event dispatching.
  */
 export abstract class BaseListener {
+  private static lastIgnoredLogAt = 0;
+
   protected name: string;
   protected isActive: boolean = false;
   protected queueManager: QueueManager;
@@ -45,10 +47,13 @@ export abstract class BaseListener {
         case 'TOKEN_DETECTED': {
           const d = event.data;
           if (!d.mintAddress || d.mintAddress.length < 32) {
-            logger.info('BaseListener: TOKEN_DETECTED ignorado — mint vazio ou inválido', {
-              source: this.name,
-              mintLen: d.mintAddress?.length ?? 0,
-            });
+            if (Date.now() - BaseListener.lastIgnoredLogAt > 10_000) {
+              BaseListener.lastIgnoredLogAt = Date.now();
+              logger.info('BaseListener: TOKEN_DETECTED ignorado — mint vazio ou inválido', {
+                source: this.name,
+                mintLen: d.mintAddress?.length ?? 0,
+              });
+            }
             break;
           }
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'token-detected', {
@@ -66,10 +71,13 @@ export abstract class BaseListener {
         case 'POOL_CREATED': {
           const d = event.data as import('../types/pool.types.js').PoolInfo;
           if (!d.tokenMint || d.tokenMint.length < 32) {
-            logger.info('BaseListener: POOL_CREATED ignorado — tokenMint vazio ou inválido', {
-              source: this.name,
-              tokenMintLen: d.tokenMint?.length ?? 0,
-            });
+            if (Date.now() - BaseListener.lastIgnoredLogAt > 10_000) {
+              BaseListener.lastIgnoredLogAt = Date.now();
+              logger.info('BaseListener: POOL_CREATED ignorado — tokenMint vazio ou inválido', {
+                source: this.name,
+                tokenMintLen: d.tokenMint?.length ?? 0,
+              });
+            }
             break;
           }
           await this.queueManager.addJob(QueueName.TOKEN_SCAN, 'pool-created', {
