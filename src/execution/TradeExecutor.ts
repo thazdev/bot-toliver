@@ -17,6 +17,7 @@ import {
   saveDryRunPosition,
   type DryRunPosition,
 } from '../services/DryRunPositionService.js';
+import { getTierConfig } from '../strategies/config.js';
 import type { PoolScanner } from '../scanners/PoolScanner.js';
 
 const BUY_LOCK_TTL_SEC = parseInt(process.env.BUY_LOCK_TTL_SEC ?? '30', 10);
@@ -154,6 +155,13 @@ export class TradeExecutor {
 
       // Salvar posição completa no Redis para monitoramento
       if (tradeRequest.direction === 'buy') {
+        // Use config values for SL/TP instead of hardcoded
+        const tierCfg = getTierConfig(this.config.trading.strategyTier);
+        const slPercent = tierCfg.stopLoss.hardStopPercent / 100;
+        const tp1Gain = tierCfg.exit.tp1.gainPercent / 100;
+        const tp2Gain = tierCfg.exit.tp2.gainPercent / 100;
+        const tp3Gain = tierCfg.exit.tp3.gainPercent / 100;
+
         const dryRunPosition: DryRunPosition = {
           id: `dry_${Date.now()}_${tradeRequest.tokenMint.slice(0, 8)}`,
           tokenMint: tradeRequest.tokenMint,
@@ -164,10 +172,10 @@ export class TradeExecutor {
           entryScore,
           strategy: tradeRequest.strategyId,
           tier: this.config.trading.strategyTier,
-          stopLossPrice: entryPrice * 0.85,
-          tp1Price: entryPrice * 1.5,
-          tp2Price: entryPrice * 2.0,
-          tp3Price: entryPrice * 2.5,
+          stopLossPrice: entryPrice * (1 - slPercent),
+          tp1Price: entryPrice * (1 + tp1Gain),
+          tp2Price: entryPrice * (1 + tp2Gain),
+          tp3Price: entryPrice * (1 + tp3Gain),
           trailingStopPrice: null,
           peakPrice: entryPrice,
           currentPrice: entryPrice,

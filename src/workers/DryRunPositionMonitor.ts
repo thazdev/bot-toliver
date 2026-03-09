@@ -1,5 +1,5 @@
 /**
- * Monitor de posições dry run — roda a cada 15s quando bot está em modo dry-run.
+ * Monitor de posições dry run — roda a cada 5s quando bot está em modo dry-run.
  * Atualiza preço atual, P&L, e fecha posições quando condições de saída são atingidas.
  * Publica tudo no Redis pub/sub (bot:events) para o dashboard consumir via Socket.io.
  */
@@ -20,7 +20,10 @@ import {
 } from '../services/DryRunPositionService.js';
 import type { PoolScanner } from '../scanners/PoolScanner.js';
 
-const HOLD_TIMEOUT_MS = 7_200_000; // 2 horas
+const MONITOR_INTERVAL_MS = 5_000; // 5s — fast enough for volatile tokens
+const HOLD_TIMEOUT_MS = 7_200_000; // 2 hours max hold
+const QUICK_EXIT_WINDOW_MS = 60_000; // first 60 seconds
+const QUICK_EXIT_LOSS_PCT = -5; // exit if down >5% within first 60s
 const TOTAL_CAPITAL_SOL = parseFloat(process.env.TOTAL_CAPITAL_SOL ?? '0.9');
 
 export type DryRunMonitorOptions = {
@@ -89,6 +92,49 @@ async function publishSnapshot(): Promise<void> {
   } catch (_) {}
 }
 
+/**
+ * Determine exit reason based on current price, position state and time held.
+ * Implements:
+ *  - Quick-exit: down >5% within first 60s
+ *  - Hard stop loss
+ *  - Trailing stop (activates after TP1)
+ *  - Take-profit levels (progressive, NOT selling immediately at TP1)
+ *  - Time-based exit after 2h
+ */
+function determineExitReason(position: DryRunPosition, currentPrice: number, pnlPct: number): string | null {
+  const holdMs = Date.now() - new Date(position.entryTime).getTime();
+
+  // QUICK EXIT: if down >5% within first 60 seconds, cut losses fast
+  if (holdMs < QUICK_EXIT_WINDOW_MS && pnlPct <= QUICK_EXIT_LOSS_PCT) {
+    return 'quick_exit';
+  }
+
+  // HARD STOP LOSS
+  if (currentPrice <= position.stopLossPrice) {
+    return 'stop_loss';
+  }
+
+  // TRAILING STOP (only active after TP1 is reached)
+  if (position.trailingStopPrice != null && position.trailingStopPrice > 0 && currentPrice <= position.trailingStopPrice) {
+    return 'trailing_stop';
+  }
+
+  // TP3: sell all remaining (full exit)
+  if (currentPrice >= position.tp3Price) {
+    return 'tp3_hit';
+  }
+
+  // TP1/TP2: don't sell immediately — we rely on trailing stop to protect gains
+  // The trailing stop will be updated in the main loop when price >= tp1
+
+  // TIME EXIT: 2 hours max hold
+  if (holdMs > HOLD_TIMEOUT_MS) {
+    return 'time_exit';
+  }
+
+  return null;
+}
+
 async function monitorDryRunPositions(): Promise<void> {
   const isDryRun = await getEffectiveDryRun();
   if (!isDryRun) return;
@@ -105,6 +151,20 @@ async function monitorDryRunPositions(): Promise<void> {
 
     const currentPrice = await getCurrentPrice(position.tokenMint);
     if (currentPrice == null || currentPrice <= 0) {
+      // Can't get price — check if we should quick-exit based on time alone
+      const holdMs = Date.now() - new Date(position.entryTime).getTime();
+      if (holdMs > HOLD_TIMEOUT_MS) {
+        // Time exit even without price — use entry price as fallback
+        position.status = 'closed';
+        position.exitPrice = position.entryPrice;
+        position.exitReason = 'time_exit_no_price';
+        position.exitTime = new Date().toISOString();
+        position.finalPnlPct = 0;
+        position.finalPnlSOL = 0;
+        await closePosition(position);
+        continue;
+      }
+      // Keep position at entry price, no exit check
       position.currentPrice = position.entryPrice;
       position.currentPnlPct = 0;
       position.currentPnlSOL = 0;
@@ -116,29 +176,28 @@ async function monitorDryRunPositions(): Promise<void> {
     const pnlSOL = position.amountSOL * (pnlPct / 100);
     const peakPrice = Math.max(position.peakPrice, currentPrice);
 
+    // Progressive trailing stop:
+    // - After TP1: trail at 12% below peak (lock in some gains)
+    // - After TP2: tighten trail to 8% below peak
+    // - After TP3: tighten trail to 5% below peak
     let trailingStopPrice = position.trailingStopPrice;
-    if (currentPrice >= position.tp1Price) {
-      const newTrail = peakPrice * 0.88;
+    if (currentPrice >= position.tp2Price) {
+      // Tight trail after TP2
+      const newTrail = peakPrice * 0.92;
+      trailingStopPrice = Math.max(trailingStopPrice ?? 0, newTrail);
+    } else if (currentPrice >= position.tp1Price) {
+      // Standard trail after TP1 — lock in at least break-even
+      const newTrail = Math.max(peakPrice * 0.88, position.entryPrice * 1.02);
       trailingStopPrice = Math.max(trailingStopPrice ?? 0, newTrail);
     }
 
-    let exitReason: string | null = null;
-    if (currentPrice <= position.stopLossPrice) {
-      exitReason = 'stop_loss';
-    } else if (trailingStopPrice != null && currentPrice <= trailingStopPrice) {
-      exitReason = 'trailing_stop';
-    } else if (currentPrice >= position.tp3Price) {
-      exitReason = 'tp3_hit';
-    } else if (currentPrice >= position.tp2Price) {
-      exitReason = 'tp2_hit';
-    } else if (currentPrice >= position.tp1Price) {
-      exitReason = 'tp1_hit';
-    } else {
-      const holdMs = Date.now() - new Date(position.entryTime).getTime();
-      if (holdMs > HOLD_TIMEOUT_MS) {
-        exitReason = 'time_exit';
-      }
+    // Break-even stop: if we ever reached +8%, move stop to entry price
+    const gainFromEntry = ((peakPrice - position.entryPrice) / position.entryPrice) * 100;
+    if (gainFromEntry >= 8 && (trailingStopPrice == null || trailingStopPrice < position.entryPrice)) {
+      trailingStopPrice = position.entryPrice;
     }
+
+    const exitReason = determineExitReason(position, currentPrice, pnlPct);
 
     position.currentPrice = currentPrice;
     position.currentPnlPct = pnlPct;
@@ -224,7 +283,7 @@ export function startDryRunPositionMonitor(options?: DryRunMonitorOptions): void
 
   monitorInterval = setInterval(() => {
     monitorDryRunPositions().catch(() => {});
-  }, 15_000);
+  }, MONITOR_INTERVAL_MS);
 
   monitorDryRunPositions().catch(() => {});
 }

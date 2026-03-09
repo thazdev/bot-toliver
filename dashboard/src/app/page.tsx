@@ -2,6 +2,7 @@
 
 import useSWR from 'swr';
 import clsx from 'clsx';
+import { useState, useCallback } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -10,6 +11,7 @@ import {
   Clock,
   AlertTriangle,
   ExternalLink,
+  RotateCcw,
 } from 'lucide-react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { Header } from '@/components/layout/Header';
@@ -77,6 +79,29 @@ function KpiCard({
 }
 
 export default function OverviewPage() {
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+
+  const handleReset = useCallback(async () => {
+    if (!confirm('Tem certeza que deseja resetar TODAS as posições e trades? Esta ação não pode ser desfeita.')) return;
+    setResetting(true);
+    setResetMsg(null);
+    try {
+      const res = await fetch('/api/reset', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setResetMsg(`✅ Reset completo — ${json.details.openPositionsCleared} posições abertas + histórico limpos`);
+      } else {
+        setResetMsg(`❌ Erro: ${json.error}`);
+      }
+    } catch (err) {
+      setResetMsg('❌ Erro de conexão ao resetar');
+    } finally {
+      setResetting(false);
+      setTimeout(() => setResetMsg(null), 5000);
+    }
+  }, []);
+
   const { data: health } = useSWR<BotHealth>('/api/health', fetcher, {
     refreshInterval: 3_000,
   });
@@ -131,6 +156,33 @@ export default function OverviewPage() {
           Bot parado &mdash; nenhuma operação em andamento
         </div>
       )}
+
+      {/* Reset bar */}
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          {resetMsg && (
+            <span className={clsx(
+              'text-sm font-medium',
+              resetMsg.startsWith('✅') ? 'text-emerald-400' : 'text-red-400',
+            )}>
+              {resetMsg}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={handleReset}
+          disabled={resetting}
+          className={clsx(
+            'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors',
+            resetting
+              ? 'cursor-not-allowed border-slate-600 bg-slate-700/50 text-slate-500'
+              : 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/50',
+          )}
+        >
+          <RotateCcw className={clsx('h-4 w-4', resetting && 'animate-spin')} />
+          {resetting ? 'Resetando...' : 'Resetar Trades'}
+        </button>
+      </div>
 
       {/* KPI Cards */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">

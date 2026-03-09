@@ -423,16 +423,16 @@ const CONSERVATIVE: TierConfig = {
     maxPriceGainFromLaunch: 300,
   },
   exit: {
-    tp1: { sellPercent: 30, gainPercent: 50 },
-    tp2: { sellPercent: 40, gainPercent: 100 },
-    tp3: { sellPercent: 100, gainPercent: 150 },
+    tp1: { sellPercent: 30, gainPercent: 20 },
+    tp2: { sellPercent: 40, gainPercent: 50 },
+    tp3: { sellPercent: 100, gainPercent: 100 },
     residualHoldPercent: 0,
   },
   stopLoss: {
-    hardStopPercent: 15,
-    softWarningPercent: 8,
-    breakEvenActivationGain: 30,
-    trailingStopDelta: 8,
+    hardStopPercent: 10,
+    softWarningPercent: 5,
+    breakEvenActivationGain: 15,
+    trailingStopDelta: 6,
   },
   sizing: {
     basePositionPercent: 2,
