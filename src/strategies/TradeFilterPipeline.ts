@@ -13,12 +13,8 @@ import type {
 interface PipelineTelemetry {
   tokenMint: string;
   receivedAt: number;
-  stage1_result: string;
-  stage2_result: string;
-  stage3_result: string;
-  stage4_result: string;
-  stage5_result: string;
-  stage6_result: string;
+  hardReject_result: string;
+  deepAnalysis_result: string;
   finalResult: string;
   scores: Record<string, number>;
 }
@@ -61,6 +57,17 @@ export class TradeFilterPipeline {
     this.filterConfig = this.tierConfig.filter;
   }
 
+  /**
+   * Pipeline simplificado — 3 etapas:
+   *   1. Hard Reject  (blacklist, rug devs, honeypot DB)
+   *   2. Deep Analysis (top holder %, honeypot sim, entry score)
+   *   3. Final Score Gate (adjustedScore >= threshold)
+   *
+   * Stages removidos por redundância:
+   *   - basic_viability  → coberto por EntryStrategy.passesSignalStack
+   *   - market_context   → coberto por TradingGuard.checkHardBlocks
+   *   - sizing_risk      → coberto por TradingGuard.checkHardBlocks
+   */
   async runPipeline(context: StrategyContext): Promise<TradeFilterOutcome> {
     const startMs = Date.now();
     const steps: FilterPipelineResult[] = [];
@@ -69,12 +76,8 @@ export class TradeFilterPipeline {
     const telemetry: PipelineTelemetry = {
       tokenMint,
       receivedAt: Date.now(),
-      stage1_result: '',
-      stage2_result: '',
-      stage3_result: '',
-      stage4_result: '',
-      stage5_result: '',
-      stage6_result: '',
+      hardReject_result: '',
+      deepAnalysis_result: '',
       finalResult: '',
       scores: {},
     };
@@ -86,73 +89,46 @@ export class TradeFilterPipeline {
       // Non-critical: diagnóstico
     }
 
+    // ── Emergency Halt ──────────────────────────────────────────────
     if (this.emergencyHalt) {
       const step = { step: 'emergency_halt', passed: false, reason: 'Emergency halt active via admin override', durationMs: 0 };
       steps.push(step);
-      telemetry.stage1_result = `rejected: ${step.reason}`;
+      telemetry.hardReject_result = `rejected: ${step.reason}`;
       await this.logStage1Rejection(tokenMint, 'emergency_halt', step.reason);
       logger.debug('PIPELINE_TELEMETRY', { telemetry });
       return await this.buildOutcome(tokenMint, steps, startMs, 0);
-    } else {
-      const step2 = this.step2HardReject(context);
-      steps.push(step2);
-      telemetry.stage1_result = step2.passed ? 'passed' : `rejected: ${step2.reason}`;
-      if (!step2.passed) {
-        const reasonCode = this.getStage1ReasonCode(step2.reason ?? '');
-        await this.logStage1Rejection(tokenMint, reasonCode, step2.reason ?? '');
-      }
-      logger.debug('PIPELINE_TELEMETRY', { telemetry });
-      if (!step2.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
     }
 
-    const step3 = await this.step3BasicViability(context);
-    steps.push(step3);
-    const isRugReject = !step3.passed && step3.reason?.toLowerCase().includes('rug score');
-    telemetry.stage2_result = step3.passed ? 'passed' : (isRugReject ? 'passed' : `rejected: ${step3.reason}`);
-    telemetry.stage3_result = step3.passed ? 'passed' : (isRugReject ? `rejected: ${step3.reason}` : 'passed');
-    logger.debug('PIPELINE_TELEMETRY', { telemetry });
-    if (!step3.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
+    // ── Stage 1: Hard Reject (blacklist / rug devs / honeypot DB) ───
+    const hardReject = this.stepHardReject(context);
+    steps.push(hardReject);
+    telemetry.hardReject_result = hardReject.passed ? 'passed' : `rejected: ${hardReject.reason}`;
+    if (!hardReject.passed) {
+      const reasonCode = this.getStage1ReasonCode(hardReject.reason ?? '');
+      await this.logStage1Rejection(tokenMint, reasonCode, hardReject.reason ?? '');
+      logger.debug('PIPELINE_TELEMETRY', { telemetry });
+      return await this.buildOutcome(tokenMint, steps, startMs, 0);
+    }
 
-    // Log obrigatório: confirmação de passagem Stage 2 → Stage 3
-    logger.debug('STAGE2_PASSED', { tokenMint: tokenMint.slice(0, 12) });
-    try {
-      const redis = RedisClient.getInstance().getClient();
-      await redis.incr('diag:stage2_passed');
-    } catch (_) {}
+    // ── Stage 2: Deep Analysis (top holder %, honeypot, entry score) ─
+    const deepAnalysis = this.stepDeepAnalysis(context);
+    steps.push(deepAnalysis);
+    telemetry.deepAnalysis_result = deepAnalysis.passed ? 'passed' : `rejected: ${deepAnalysis.reason}`;
+    Object.assign(telemetry.scores, deepAnalysis.scores ?? {});
+    if (!deepAnalysis.passed) {
+      logger.debug('PIPELINE_TELEMETRY', { telemetry });
+      return await this.buildOutcome(tokenMint, steps, startMs, 0);
+    }
 
-    // Log obrigatório: entrada no Stage 3 (deep_analysis)
-    logger.debug('STAGE3_ENTRY', { tokenMint: tokenMint.slice(0, 12) });
-    try {
-      const redis = RedisClient.getInstance().getClient();
-      await redis.incr('diag:stage3_entries');
-    } catch (_) {}
-
-    const step4 = this.step4DeepAnalysis(context);
-    steps.push(step4);
-    telemetry.stage4_result = step4.passed ? 'passed' : `rejected: ${step4.reason}`;
-    Object.assign(telemetry.scores, step4.scores ?? {});
-    logger.debug('PIPELINE_TELEMETRY', { telemetry });
-    if (!step4.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
-
-    const step5 = this.step5MarketContext(context);
-    steps.push(step5);
-    telemetry.stage5_result = step5.passed ? 'passed' : `rejected: ${step5.reason}`;
-    logger.debug('PIPELINE_TELEMETRY', { telemetry });
-    if (!step5.passed) return await this.buildOutcome(tokenMint, steps, startMs, 0);
-
-    const entryScore = step4.scores?.['entryScore'] ?? 0;
+    // ── Overrides (smart money, liquidez alta, rug score extreme) ────
+    const entryScore = deepAnalysis.scores?.['entryScore'] ?? 0;
     let adjustedScore = entryScore;
 
     const overrideResult = this.applyOverrides(context, adjustedScore);
     adjustedScore = overrideResult.adjustedScore;
     if (overrideResult.step) steps.push(overrideResult.step);
 
-    const step6 = this.step6SizingRiskCheck(context);
-    steps.push(step6);
-    telemetry.stage6_result = step6.passed ? 'passed' : `rejected: ${step6.reason}`;
-    logger.debug('PIPELINE_TELEMETRY', { telemetry });
-    if (!step6.passed) return await this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
-
+    // ── Final Score Gate ─────────────────────────────────────────────
     const threshold = this.filterConfig.minEntryScoreThreshold;
     if (adjustedScore < threshold) {
       const finalStep = {
@@ -184,7 +160,10 @@ export class TradeFilterPipeline {
     return await this.buildOutcome(tokenMint, steps, startMs, adjustedScore);
   }
 
-  private step2HardReject(context: StrategyContext): FilterPipelineResult {
+  // ═══════════════════════════════════════════════════════════════════
+  //  Stage 1: Hard Reject — lookup barato em Set (blacklist/rug devs)
+  // ═══════════════════════════════════════════════════════════════════
+  private stepHardReject(context: StrategyContext): FilterPipelineResult {
     const start = Date.now();
     const token = context.tokenInfo.mintAddress;
 
@@ -200,9 +179,6 @@ export class TradeFilterPipeline {
       return { step: 'hard_reject', passed: false, reason: 'Known honeypot in DB', durationMs: Date.now() - start };
     }
 
-    // Defer check removed: tokens are processed once on detection and never re-queued,
-    // so deferring was a permanent rejection disguised as a delay.
-
     if (context.safetyData.isBlacklisted) {
       return { step: 'hard_reject', passed: false, reason: 'Token is blacklisted', durationMs: Date.now() - start };
     }
@@ -210,81 +186,10 @@ export class TradeFilterPipeline {
     return { step: 'hard_reject', passed: true, reason: 'Passed hard reject filter', durationMs: Date.now() - start };
   }
 
-  private async step3BasicViability(context: StrategyContext): Promise<FilterPipelineResult> {
-    const start = Date.now();
-    const tokenMint = context.tokenInfo.mintAddress;
-    const minRequired = this.tierConfig.entry.minLiquiditySol;
-
-    // STAGE2_VALUES: log para CADA token (passa ou rejeita) — diagnóstico
-    logger.debug('STAGE2_VALUES', {
-      tokenMint: tokenMint.slice(0, 12),
-      liquiditySOL: context.liquidity,
-      minRequired,
-      mintAuthority: !context.safetyData.mintAuthorityDisabled ? 'active' : 'disabled',
-      freezeAuthority: !context.safetyData.freezeAuthorityAbsent ? 'set' : 'absent',
-      rugScore: context.safetyData.rugScore,
-      rejectReason: null as string | null,
-    });
-
-    if (context.liquidity < minRequired) {
-      const reasonCode = 'liquidity_too_low';
-      await this.logStage2Rejection(tokenMint, reasonCode, `Liquidity ${context.liquidity.toFixed(2)} SOL < min ${minRequired}`);
-      return {
-        step: 'basic_viability',
-        passed: false,
-        reason: `Liquidity ${context.liquidity.toFixed(2)} SOL < min ${minRequired}`,
-        durationMs: Date.now() - start,
-      };
-    }
-
-    if (!context.safetyData.mintAuthorityDisabled) {
-      const reasonCode = 'mint_authority_active';
-      await this.logStage2Rejection(tokenMint, reasonCode, 'Mint authority not disabled');
-      return { step: 'basic_viability', passed: false, reason: 'Mint authority not disabled', durationMs: Date.now() - start };
-    }
-
-    // Freeze authority: rejeitar (EntryStrategy exige freeze absent — alinhar pipeline e estratégia)
-    if (!context.safetyData.freezeAuthorityAbsent) {
-      const reasonCode = 'freeze_authority_set';
-      await this.logStage2Rejection(tokenMint, reasonCode, 'Freeze authority set — rug risk');
-      return {
-        step: 'basic_viability',
-        passed: false,
-        reason: 'Freeze authority set — rug risk',
-        durationMs: Date.now() - start,
-      };
-    }
-
-    if (context.safetyData.rugScore < this.filterConfig.minRugScoreStep3) {
-      const reasonCode = 'rug_score_too_low';
-      await this.logStage2Rejection(tokenMint, reasonCode, `Rug score ${context.safetyData.rugScore} < ${this.filterConfig.minRugScoreStep3}`);
-      return {
-        step: 'basic_viability',
-        passed: false,
-        reason: `Rug score ${context.safetyData.rugScore} < ${this.filterConfig.minRugScoreStep3}`,
-        durationMs: Date.now() - start,
-        scores: { rugScore: context.safetyData.rugScore },
-      };
-    }
-
-    return { step: 'basic_viability', passed: true, reason: 'Basic viability passed', durationMs: Date.now() - start };
-  }
-
-  private async logStage2Rejection(tokenMint: string, reasonCode: string, details: string): Promise<void> {
-    logger.debug('STAGE2_REJECT_REASON', {
-      tokenMint: tokenMint.slice(0, 12),
-      reason: reasonCode,
-      details,
-    });
-    try {
-      const redis = RedisClient.getInstance().getClient();
-      await redis.incr(`diag:stage2_reject_${reasonCode}`);
-    } catch {
-      // ignora
-    }
-  }
-
-  private step4DeepAnalysis(context: StrategyContext): FilterPipelineResult {
+  // ═══════════════════════════════════════════════════════════════════
+  //  Stage 2: Deep Analysis — top holder %, honeypot sim, entry score
+  // ═══════════════════════════════════════════════════════════════════
+  private stepDeepAnalysis(context: StrategyContext): FilterPipelineResult {
     const start = Date.now();
 
     if (context.holderData.topHolderPercent > this.tierConfig.entry.maxTopHolderPercent) {
@@ -314,49 +219,9 @@ export class TradeFilterPipeline {
     };
   }
 
-  private step5MarketContext(context: StrategyContext): FilterPipelineResult {
-    const start = Date.now();
-
-    const panicMode = context.sentimentData.sentimentRegime === 'panic';
-    const dailyLossExceeded = context.dailyLossPercent >= 5;
-
-    logger.debug('STAGE5_CHECK', {
-      panicMode,
-      consecutiveLosses: context.consecutiveLosses,
-      dailyLossExceeded,
-      jupiterOnline: context.jupiterAvailable,
-      emergencyHalt: this.emergencyHalt,
-    });
-
-    if (panicMode) {
-      return { step: 'market_context', passed: false, reason: 'Sentiment regime: PANIC — new entries suspended', durationMs: Date.now() - start };
-    }
-
-    if (context.consecutiveLosses >= 5) {
-      return { step: 'market_context', passed: false, reason: '5+ consecutive losses — no-trade condition', durationMs: Date.now() - start };
-    }
-
-    if (dailyLossExceeded) {
-      return { step: 'market_context', passed: false, reason: `Daily loss ${context.dailyLossPercent.toFixed(1)}% ≥ 5% — no-trade condition`, durationMs: Date.now() - start };
-    }
-
-    if (!context.jupiterAvailable) {
-      return { step: 'market_context', passed: false, reason: 'Jupiter unavailable', durationMs: Date.now() - start };
-    }
-
-    return { step: 'market_context', passed: true, reason: 'Market context clear', durationMs: Date.now() - start };
-  }
-
-  private step6SizingRiskCheck(context: StrategyContext): FilterPipelineResult {
-    const start = Date.now();
-
-    if (context.hotWalletBalance < 0.1) {
-      return { step: 'sizing_risk', passed: false, reason: 'Insufficient hot wallet balance', durationMs: Date.now() - start };
-    }
-
-    return { step: 'sizing_risk', passed: true, reason: 'Sizing and risk check passed', durationMs: Date.now() - start };
-  }
-
+  // ═══════════════════════════════════════════════════════════════════
+  //  Overrides — bypasses para smart money, liquidez alta, etc.
+  // ═══════════════════════════════════════════════════════════════════
   private applyOverrides(
     context: StrategyContext,
     score: number,
@@ -425,6 +290,9 @@ export class TradeFilterPipeline {
     return { adjustedScore };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  Entry Score computation
+  // ═══════════════════════════════════════════════════════════════════
   private computeEntryScore(context: StrategyContext): number {
     const liquidityScore = Math.min(100, (context.liquidity / 50) * 100);
     const holderScore = Math.min(100, (context.holderData.holderCount / 100) * 100);
@@ -442,12 +310,14 @@ export class TradeFilterPipeline {
     return (liquidityScore * 0.25) + (holderScore * 0.20) + (momentumScore * 0.20) + (safetyScore * 0.25) + (smartMoneyScore * 0.10);
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  Helpers — logging, diagnostics, Redis keys
+  // ═══════════════════════════════════════════════════════════════════
   private getStage1ReasonCode(reason: string): string {
     if (!reason || reason.trim() === '') return 'outros';
     if (reason.includes('Blacklisted address')) return 'blacklist';
     if (reason.includes('Known rug dev')) return 'known_rug_dev';
     if (reason.includes('Known honeypot')) return 'honeypot_db';
-    if (reason.includes('DEFERRED') || reason.includes('Token age')) return 'token_too_new';
     if (reason.includes('Token is blacklisted')) return 'token_blacklisted';
     if (reason.includes('Emergency halt')) return 'emergency_halt';
     return 'outros';
@@ -472,15 +342,8 @@ export class TradeFilterPipeline {
     if (failedStep.step === 'emergency_halt' || failedStep.step === 'hard_reject') {
       return 'diag:tokens_stage1_rejected';
     }
-    if (failedStep.step === 'basic_viability') {
-      const isRug = failedStep.reason?.toLowerCase().includes('rug score');
-      return isRug ? 'diag:tokens_stage3_rejected' : 'diag:tokens_stage2_rejected';
-    }
-    if (failedStep.step === 'deep_analysis') return 'diag:tokens_stage4_rejected';
-    if (failedStep.step === 'market_context') return 'diag:tokens_stage5_rejected';
-    if (failedStep.step === 'sizing_risk' || failedStep.step === 'final_score_gate') {
-      return 'diag:tokens_stage6_rejected';
-    }
+    if (failedStep.step === 'deep_analysis') return 'diag:tokens_stage2_rejected';
+    if (failedStep.step === 'final_score_gate') return 'diag:tokens_stage3_rejected';
     return `diag:tokens_stage_${failedStep.step}_rejected`;
   }
 
@@ -525,6 +388,9 @@ export class TradeFilterPipeline {
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  Public API — feedback, blacklist, stats
+  // ═══════════════════════════════════════════════════════════════════
   recordTradeOutcome(outcome: TradeOutcomeRecord): void {
     this.tradeOutcomes.push(outcome);
 
