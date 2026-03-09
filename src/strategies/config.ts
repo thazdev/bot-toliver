@@ -379,7 +379,7 @@ const SHARED_SENTIMENT: SentimentConfig = {
 };
 
 const SHARED_FILTER: FilterConfig = {
-  deferTokenAgeSec: 10,
+  deferTokenAgeSec: 0,
   deferRecheckSec: 30,
   minRugScoreStep3: 50,
   minEntryScoreThreshold: 60,
