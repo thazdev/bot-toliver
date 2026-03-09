@@ -129,6 +129,10 @@ export class MomentumStrategy extends BaseStrategy {
 
   isWashTrading(context: StrategyContext): boolean {
     const vol = context.volumeContext;
+    // Sem dados de volume, não podemos detectar wash — não bloquear por falsos positivos
+    if (vol.uniqueWalletsPerVolume === 0 && vol.volume5minAvg === 0) {
+      return false;
+    }
     const minWallets = parseInt(process.env.WASH_MIN_UNIQUE_WALLETS ?? '1', 10) || 1;
     const minBuyRatio = parseFloat(process.env.WASH_MIN_BUY_RATIO ?? '0.15') || 0.15;
     const maxBuyRatio = parseFloat(process.env.WASH_MAX_BUY_RATIO ?? '0.99') || 0.99;
