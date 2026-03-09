@@ -243,10 +243,16 @@ export class TradeFilterPipeline {
       return { step: 'basic_viability', passed: false, reason: 'Mint authority not disabled', durationMs: Date.now() - start };
     }
 
-    // Freeze authority: penalizar em vez de rejeitar (para teste)
+    // Freeze authority: rejeitar (EntryStrategy exige freeze absent — alinhar pipeline e estratégia)
     if (!context.safetyData.freezeAuthorityAbsent) {
-      context.safetyData.rugScore -= 20;
-      logger.debug('FREEZE_AUTH_PENALTY', { tokenMint: tokenMint.slice(0, 12), rugScoreAfter: context.safetyData.rugScore });
+      const reasonCode = 'freeze_authority_set';
+      await this.logStage2Rejection(tokenMint, reasonCode, 'Freeze authority set — rug risk');
+      return {
+        step: 'basic_viability',
+        passed: false,
+        reason: 'Freeze authority set — rug risk',
+        durationMs: Date.now() - start,
+      };
     }
 
     if (context.safetyData.rugScore < this.filterConfig.minRugScoreStep3) {
