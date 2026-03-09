@@ -68,6 +68,17 @@ export class MomentumStrategy extends BaseStrategy {
     }
 
     if (volTrend > cfg.strongMomentumVolTrend && context.priceRising) {
+      if (context.priceChangePercent5min < 12) {
+        return skip(`Strong momentum blocked: 5min price change ${context.priceChangePercent5min.toFixed(1)}% < 12%`);
+      }
+      if (context.buySellRatio5min < 0.62) {
+        return skip(`Strong momentum blocked: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < 0.62`);
+      }
+      const ub2min = context.uniqueBuyers2min ?? 0;
+      if (ub2min < 10) {
+        return skip(`Strong momentum blocked: unique buyers (2min) ${ub2min} < 10`);
+      }
+
       const confidence = Math.min(1.0, (momentumScore / 100) + 0.15);
       const sizeSol = this.tierConfig.entry.solSizeMax * confidence;
 
@@ -87,6 +98,16 @@ export class MomentumStrategy extends BaseStrategy {
     }
 
     if (volTrend >= cfg.moderateMomentumVolTrend && context.priceRising) {
+      if (context.priceChangePercent5min < 6) {
+        return skip(`Moderate momentum blocked: 5min price change ${context.priceChangePercent5min.toFixed(1)}% < 6%`);
+      }
+      if (context.buySellRatio5min < 0.58) {
+        return skip(`Moderate momentum blocked: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < 0.58`);
+      }
+      if (context.liquidity < 8) {
+        return skip(`Moderate momentum blocked: liquidity ${context.liquidity.toFixed(1)} SOL < 8 SOL`);
+      }
+
       const confidence = Math.min(1.0, momentumScore / 100);
       const sizeSol = this.tierConfig.entry.solSizeMin * confidence;
 

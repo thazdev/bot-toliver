@@ -139,16 +139,20 @@ export class SmartMoneyTracker {
   } {
     const tier1Count = context.smartMoneyData.tier1WalletsBuying;
     const tier2Count = context.smartMoneyData.tier2WalletsBuying;
+    const tokenAge = context.tokenAgeSec;
+    const rugScore = context.safetyData.rugScore;
 
     if (tier1Count <= 0 && tier2Count <= 0) {
       return { shouldEnter: false, sizeMultiplierPct: 0, reason: 'No smart money buying' };
     }
 
-    if (context.safetyData.rugScore < 60) {
-      return { shouldEnter: false, sizeMultiplierPct: 0, reason: `Rug score ${context.safetyData.rugScore} < 60 — smart money override blocked` };
-    }
-
     if (tier1Count >= 3) {
+      if (tokenAge < 180) {
+        return { shouldEnter: false, sizeMultiplierPct: 0, reason: `3+ tier-1 blocked: token age ${tokenAge}s < 180s` };
+      }
+      if (rugScore < 70) {
+        return { shouldEnter: false, sizeMultiplierPct: 0, reason: `3+ tier-1 blocked: rug score ${rugScore} < 70` };
+      }
       logger.debug('SmartMoneyTracker: 3+ tier-1 wallets buying — BOOST entry', {
         token: context.tokenInfo.mintAddress,
         tier1Count,
@@ -161,6 +165,12 @@ export class SmartMoneyTracker {
     }
 
     if (tier1Count >= 2) {
+      if (tokenAge < 240) {
+        return { shouldEnter: false, sizeMultiplierPct: 0, reason: `2 tier-1 blocked: token age ${tokenAge}s < 240s` };
+      }
+      if (rugScore < 70) {
+        return { shouldEnter: false, sizeMultiplierPct: 0, reason: `2 tier-1 blocked: rug score ${rugScore} < 70` };
+      }
       return {
         shouldEnter: true,
         sizeMultiplierPct: this.config.copyTrade2WalletSizePct,
@@ -169,6 +179,12 @@ export class SmartMoneyTracker {
     }
 
     if (tier1Count >= 1) {
+      if (tokenAge < 300) {
+        return { shouldEnter: false, sizeMultiplierPct: 0, reason: `1 tier-1 blocked: token age ${tokenAge}s < 300s` };
+      }
+      if (rugScore < 75) {
+        return { shouldEnter: false, sizeMultiplierPct: 0, reason: `1 tier-1 blocked: rug score ${rugScore} < 75` };
+      }
       return {
         shouldEnter: true,
         sizeMultiplierPct: this.config.copyTrade1WalletSizePct,

@@ -50,7 +50,7 @@ export class LaunchStrategy extends BaseStrategy {
     }
 
     if (phase === 'ignition') {
-      return this.evaluatePhase1Sniper(context);
+      return skip('Phase 1 (Ignition Sniper) DISABLED — extreme rug pull risk on early tokens');
     }
 
     if (phase === 'discovery') {
@@ -152,12 +152,23 @@ export class LaunchStrategy extends BaseStrategy {
       return skip(`Phase 2: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < ${cfg.phase2MinBuySellRatio}`);
     }
 
-    if (context.priceChangeFromLaunch <= 0) {
-      return skip('Phase 2: no positive price action from launch');
+    const volumeRatio = context.volumeContext.volume5minAvg > 0
+      ? context.volumeContext.volume1min / context.volumeContext.volume5minAvg
+      : 0;
+    if (volumeRatio < 2.0) {
+      return skip(`Phase 2: volume trend ${volumeRatio.toFixed(1)}x < 2.0x`);
+    }
+
+    if (context.priceChangeFromLaunch < 10) {
+      return skip(`Phase 2: price change +${context.priceChangeFromLaunch.toFixed(0)}% < 10% from launch`);
     }
 
     if (context.priceChangeFromLaunch > cfg.phase2MaxPriceFromLaunch) {
       return skip(`Phase 2: already pumped ${context.priceChangeFromLaunch.toFixed(0)}% > ${cfg.phase2MaxPriceFromLaunch}%`);
+    }
+
+    if (context.liquidity < 8) {
+      return skip(`Phase 2: liquidity ${context.liquidity.toFixed(1)} SOL < 8 SOL`);
     }
 
     if (!context.liquidityStable) {
@@ -215,12 +226,24 @@ export class LaunchStrategy extends BaseStrategy {
       ? context.volumeContext.volume1min / context.volumeContext.volume5minAvg
       : 0;
 
-    if (volumeRatio < 1.5) {
-      return skip(`Phase 3: volume momentum weak (${volumeRatio.toFixed(1)}x)`);
+    if (volumeRatio < 1.8) {
+      return skip(`Phase 3: volume momentum weak (${volumeRatio.toFixed(1)}x < 1.8x)`);
+    }
+
+    if (context.holderData.holderGrowthRate < 1.5) {
+      return skip(`Phase 3: holder growth ${context.holderData.holderGrowthRate.toFixed(1)}/min < 1.5/min`);
     }
 
     if (context.holderData.holdersDecreasing) {
       return skip('Phase 3: holders decreasing — late entry risk');
+    }
+
+    if (context.buySellRatio5min < 0.58) {
+      return skip(`Phase 3: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < 0.58`);
+    }
+
+    if (context.liquidity < 10) {
+      return skip(`Phase 3: liquidity ${context.liquidity.toFixed(1)} SOL < 10 SOL`);
     }
 
     if (
@@ -236,7 +259,7 @@ export class LaunchStrategy extends BaseStrategy {
     return {
       signal: 'buy',
       confidence,
-      reason: `Phase 3 momentum: vol ${volumeRatio.toFixed(1)}x, still growing`,
+      reason: `Phase 3 momentum: vol ${volumeRatio.toFixed(1)}x, holder growth ${context.holderData.holderGrowthRate.toFixed(1)}/min`,
       suggestedSizeSol: Math.max(this.tierConfig.entry.solSizeMin, sizeSol),
       triggerType: 'momentum_confirmation',
     };
@@ -274,18 +297,29 @@ export class LaunchStrategy extends BaseStrategy {
         return null;
       }
 
+      const uniqueBuyers10min = context.uniqueBuyers10min ?? 0;
+      if (uniqueBuyers10min < 20) {
+        return null;
+      }
+
+      if (context.liquidity < 12) {
+        return null;
+      }
+
       const confidence = 0.70;
       const sizeSol = this.tierConfig.entry.solSizeMax * 0.6;
 
       logger.debug('LaunchStrategy: Pump.fun NEAR-GRADUATION entry', {
         token: context.tokenInfo.mintAddress,
         mcap: context.pumpfunMarketCap,
+        uniqueBuyers10min,
+        liquidity: context.liquidity.toFixed(1),
       });
 
       return {
         signal: 'buy',
         confidence,
-        reason: `Pump.fun near graduation: mcap $${(context.pumpfunMarketCap / 1000).toFixed(1)}K, anticipating Raydium listing`,
+        reason: `Pump.fun near graduation: mcap $${(context.pumpfunMarketCap / 1000).toFixed(1)}K, ${uniqueBuyers10min} buyers (10min)`,
         suggestedSizeSol: Math.max(this.tierConfig.entry.solSizeMin, sizeSol),
         triggerType: 'pool_creation_sniper',
       };

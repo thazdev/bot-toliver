@@ -228,12 +228,11 @@ export class TradeFilterPipeline {
   ): { adjustedScore: number; step?: FilterPipelineResult } {
     let adjustedScore = score;
 
-    // Bypass: liquidez alta + segurança básica — permite LaunchStrategy Phase 1 / sniper early
-    const minLiquidityBypass = 12;
+    const minLiquidityBypass = 20;
     if (
       context.liquidity >= minLiquidityBypass &&
-      context.holderData.holderCount >= 3 &&
-      context.safetyData.rugScore >= 60 &&
+      context.holderData.holderCount >= 10 &&
+      context.safetyData.rugScore >= 70 &&
       context.safetyData.mintAuthorityDisabled &&
       context.safetyData.freezeAuthorityAbsent
     ) {
@@ -243,7 +242,7 @@ export class TradeFilterPipeline {
         step: {
           step: 'override_liquidity_safety',
           passed: true,
-          reason: `Liquidity ${context.liquidity.toFixed(1)} SOL, ${context.holderData.holderCount} holders — liquidity+safety bypass`,
+          reason: `Liquidity ${context.liquidity.toFixed(1)} SOL ≥ ${minLiquidityBypass}, ${context.holderData.holderCount} holders — liquidity+safety bypass`,
           durationMs: 0,
         },
       };

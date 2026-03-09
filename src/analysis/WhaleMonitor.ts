@@ -68,6 +68,8 @@ export class WhaleMonitor {
       confidenceScore += (smartScore / 100) * (buy.amountSol / Math.max(1, buy.amountSol)) * timeWeight;
     }
 
+    const totalBuySol = buys.reduce((sum, b) => sum + b.amountSol, 0);
+
     return {
       whaleBuysLast5min: buys.length,
       whaleDistinctBuyers5min: buyWallets.size,
@@ -77,6 +79,7 @@ export class WhaleMonitor {
       whaleFirstBuyerSelling: firstBuyerSelling,
       whaleWashTradeDetected: washDetected,
       whaleConfidenceScore: confidenceScore,
+      totalWhaleBuySol5min: totalBuySol,
     };
   }
 
@@ -94,31 +97,37 @@ export class WhaleMonitor {
       return { ...noBoost, reason: 'Whale wash trading detected — ignoring signal' };
     }
 
-    if (whale.whaleDistinctBuyers5min >= this.config.multiWhaleBuyCount) {
+    const totalWhaleBuySol = whale.totalWhaleBuySol5min ?? 0;
+
+    if (
+      whale.whaleDistinctBuyers5min >= this.config.multiWhaleBuyCount &&
+      totalWhaleBuySol >= this.config.buySignalMinSol
+    ) {
       logger.debug('WhaleMonitor: MULTI-WHALE BUY signal', {
         token: context.tokenInfo.mintAddress,
         distinctBuyers: whale.whaleDistinctBuyers5min,
+        totalBuySol: totalWhaleBuySol.toFixed(1),
       });
       return {
         shouldBoost: true,
         scoreBoost: this.config.buyScoreBoost * 1.5,
         sizeMultiplier: this.config.multiWhaleSizeMultiplier,
         tpBoostPct: this.config.multiWhaleTpBoostPct,
-        reason: `${whale.whaleDistinctBuyers5min} whales buying in 5min — strong signal`,
+        reason: `${whale.whaleDistinctBuyers5min} whales, ${totalWhaleBuySol.toFixed(1)} SOL accumulated in 5min`,
       };
     }
 
     if (
-      whale.whaleConfidenceScore > 0.5 &&
+      whale.whaleConfidenceScore >= 0.65 &&
       context.safetyData.rugScore >= 65 &&
-      context.tokenAgeSec < this.config.buySignalMaxTokenAgeMin * 60
+      context.tokenAgeSec >= 300
     ) {
       return {
         shouldBoost: true,
         scoreBoost: this.config.buyScoreBoost,
         sizeMultiplier: 1.0,
         tpBoostPct: 0,
-        reason: `Whale confidence ${whale.whaleConfidenceScore.toFixed(2)} > 0.5 — boost entry score`,
+        reason: `Whale confidence ${whale.whaleConfidenceScore.toFixed(2)} ≥ 0.65, token age ${context.tokenAgeSec}s`,
       };
     }
 

@@ -1,4 +1,4 @@
-// UPDATED: Momentum decay thresholds + ScamRules wallet age - 2026-03-07
+// UPDATED: Risk-reduction overhaul — disable sniper, tighten filters, reduce overtrading - 2026-03-09
 import type { StrategyTier } from '../types/strategy.types.js';
 
 export interface EntryConfig {
@@ -6,13 +6,16 @@ export interface EntryConfig {
   minHolderCount: number;
   maxTopHolderPercent: number;
   maxTop5HolderPercent: number;
+  maxTop10HolderPercent: number;
   minEntryScore: number;
   maxPositionPercent: number;
   solSizeMin: number;
   solSizeMax: number;
   slippageTolerancePercent: number;
   maxPriceGainFromLaunch: number;
-  minBuyTxLast60s?: number;
+  minBuyTxLast60s: number;
+  minTokenAgeSec: number;
+  minRugScoreSignal: number;
 }
 
 export interface ExitConfig {
@@ -52,6 +55,8 @@ export interface RiskConfig {
   maxSlippageExitPercent: number;
   gasReserveSol: number;
   sameTradeCooldownMs: number;
+  globalTradeCooldownMs: number;
+  maxTradesPerMinute: number;
   reduceSizeAtRiskPercent: number;
   stopNewTradesAtRiskPercent: number;
   emergencyExitAtRiskPercent: number;
@@ -281,8 +286,8 @@ const SHARED_CAPITAL: CapitalConfig = {
 };
 
 const SHARED_MOMENTUM: MomentumConfig = {
-  strongMomentumVolTrend: 3.0,
-  moderateMomentumVolTrend: 1.5,
+  strongMomentumVolTrend: 3.5,
+  moderateMomentumVolTrend: 2.0,
   volumeCollapsingThreshold: 0.5,
   absorptionVolTrend: 3.0,
   strongMomentumScoreBoost: 15,
@@ -295,22 +300,22 @@ const SHARED_MOMENTUM: MomentumConfig = {
 
 const SHARED_LAUNCH: LaunchConfig = {
   phase1MaxPortfolioPercent: 0.5,
-  phase1MinPoolSol: 3,
-  phase1MinRugScore: 65,
+  phase1MinPoolSol: 5,
+  phase1MinRugScore: 70,
   phase1Slippage: 10,
   phase1StopPercent: 20,
   phase1Tp1: { gainPercent: 75, sellPercent: 40 },
   phase1Tp2: { gainPercent: 200, sellPercent: 40 },
   phase1HoldPercent: 20,
-  phase2MinHolders: 20,
-  phase2MinUniqueBuyers: 15,
-  phase2MinBuySellRatio: 0.55,
-  phase2MaxPriceFromLaunch: 500,
+  phase2MinHolders: 25,
+  phase2MinUniqueBuyers: 18,
+  phase2MinBuySellRatio: 0.60,
+  phase2MaxPriceFromLaunch: 200,
   phase2TrailingStop: 12,
   pumpfunPreGradMaxMcap: 30_000,
-  pumpfunNearGradMinMcap: 50_000,
+  pumpfunNearGradMinMcap: 55_000,
   pumpfunGradMcap: 69_000,
-  pumpfunOverheatRate: 100,
+  pumpfunOverheatRate: 80,
 };
 
 const SHARED_HONEYPOT: HoneypotConfig = {
@@ -351,8 +356,8 @@ const SHARED_WHALE: WhaleConfig = {
   institutionalMinSol: 50,
   multiTxWindowMinutes: 10,
   multiTxMinBuys: 5,
-  buySignalMinSol: 2,
-  buySignalMaxTokenAgeMin: 30,
+  buySignalMinSol: 8,
+  buySignalMaxTokenAgeMin: 5,
   buyScoreBoost: 20,
   multiWhaleBuyCount: 3,
   multiWhaleSizeMultiplier: 1.5,
@@ -379,14 +384,14 @@ const SHARED_SENTIMENT: SentimentConfig = {
 };
 
 const SHARED_FILTER: FilterConfig = {
-  deferTokenAgeSec: 0,
+  deferTokenAgeSec: 120,
   deferRecheckSec: 30,
-  minRugScoreStep3: 50,
+  minRugScoreStep3: 70,
   minEntryScoreThreshold: 60,
-  smartMoneyOverrideMinWallets: 3,
-  extremeRugScoreOverride: 95,
+  smartMoneyOverrideMinWallets: 4,
+  extremeRugScoreOverride: 97,
   extremeRugScoreBonus: 5,
-  euphoriaOverrideScore: 85,
+  euphoriaOverrideScore: 90,
   feedbackAutoAdjustMaxPct: 10,
   feedbackMinSampleSize: 100,
 };
@@ -405,22 +410,26 @@ const SHARED_HOLDER: HolderConfig = {
   staleVelocityThreshold: 1,
   staleScorePenalty: 15,
   sybilFundedPercentThreshold: 80,
-  topHolderRejectPercent: 30,
-  top5RejectPercent: 60,
+  topHolderRejectPercent: 12,
+  top5RejectPercent: 35,
 };
 
 const CONSERVATIVE: TierConfig = {
   entry: {
-    minLiquiditySol: 2,
-    minHolderCount: 10,
-    maxTopHolderPercent: 100,
-    maxTop5HolderPercent: 100,
+    minLiquiditySol: 12,
+    minHolderCount: 20,
+    maxTopHolderPercent: 12,
+    maxTop5HolderPercent: 35,
+    maxTop10HolderPercent: 50,
     minEntryScore: 50,
-    maxPositionPercent: 3.3,
+    maxPositionPercent: 1,
     solSizeMin: 0.02,
     solSizeMax: 0.03,
     slippageTolerancePercent: 3,
-    maxPriceGainFromLaunch: 300,
+    maxPriceGainFromLaunch: 120,
+    minBuyTxLast60s: 3,
+    minTokenAgeSec: 120,
+    minRugScoreSignal: 70,
   },
   exit: {
     tp1: { sellPercent: 30, gainPercent: 20 },
@@ -431,14 +440,14 @@ const CONSERVATIVE: TierConfig = {
   stopLoss: {
     hardStopPercent: 10,
     softWarningPercent: 5,
-    breakEvenActivationGain: 15,
+    breakEvenActivationGain: 30,
     trailingStopDelta: 6,
   },
   sizing: {
-    basePositionPercent: 2,
-    maxSinglePositionPercent: 3.3,
+    basePositionPercent: 1,
+    maxSinglePositionPercent: 1,
     minPositionSol: 0.02,
-    maxConcurrentPositions: 3,
+    maxConcurrentPositions: 1,
     highConvictionMultiplier: 1.5,
     lowConvictionMultiplier: 0.7,
     highConvictionThreshold: 85,
@@ -450,20 +459,22 @@ const CONSERVATIVE: TierConfig = {
     maxWeeklyLossPercent: 20,
     maxExposurePercent: 10,
     emergencyHaltBalanceSol: 0.1,
-    maxSingleTokenExposurePercent: 3.3,
+    maxSingleTokenExposurePercent: 1,
     riskPerTradePercent: 0.5,
     maxSlippageEntryPercent: 15,
     maxSlippageExitPercent: 20,
     gasReserveSol: 0.05,
     sameTradeCooldownMs: 30 * 60 * 1000,
+    globalTradeCooldownMs: 20_000,
+    maxTradesPerMinute: 2,
     reduceSizeAtRiskPercent: 3,
     stopNewTradesAtRiskPercent: 5,
     emergencyExitAtRiskPercent: 8,
   },
   capital: SHARED_CAPITAL,
   liquidity: {
-    minPoolSol: 2,
-    minPoolUsd: 200,
+    minPoolSol: 12,
+    minPoolUsd: 1200,
     maxImpactPercent: 3,
     minLiquidityScore: 60,
     minLiquidityAgeSec: 300,
@@ -493,11 +504,11 @@ const CONSERVATIVE: TierConfig = {
     catastrophicDropPercent: 30,
     phaseTrails: {
       breakEvenToGain30: 0,
-      gain30to75: 15,
-      gain75to150: 12,
-      gain150to300: 10,
-      gain300to500: 8,
-      gainAbove500: 6,
+      gain30to75: 25,
+      gain75to150: 25,
+      gain150to300: 20,
+      gain300to500: 15,
+      gainAbove500: 10,
     },
   },
   smartMoney: SHARED_SMART_MONEY,
@@ -508,16 +519,20 @@ const CONSERVATIVE: TierConfig = {
 
 const BALANCED: TierConfig = {
   entry: {
-    minLiquiditySol: 3,
-    minHolderCount: 5,
-    maxTopHolderPercent: 20,
-    maxTop5HolderPercent: 40,
+    minLiquiditySol: 8,
+    minHolderCount: 15,
+    maxTopHolderPercent: 12,
+    maxTop5HolderPercent: 35,
+    maxTop10HolderPercent: 50,
     minEntryScore: 60,
-    maxPositionPercent: 2,
+    maxPositionPercent: 1,
     solSizeMin: 0.1,
     solSizeMax: 0.5,
     slippageTolerancePercent: 7,
-    maxPriceGainFromLaunch: 500,
+    maxPriceGainFromLaunch: 150,
+    minBuyTxLast60s: 3,
+    minTokenAgeSec: 120,
+    minRugScoreSignal: 70,
   },
   exit: {
     tp1: { sellPercent: 25, gainPercent: 75 },
@@ -526,16 +541,16 @@ const BALANCED: TierConfig = {
     residualHoldPercent: 5,
   },
   stopLoss: {
-    hardStopPercent: 20,
-    softWarningPercent: 10,
-    breakEvenActivationGain: 50,
-    trailingStopDelta: 12,
+    hardStopPercent: 12,
+    softWarningPercent: 7,
+    breakEvenActivationGain: 30,
+    trailingStopDelta: 10,
   },
   sizing: {
     basePositionPercent: 1,
-    maxSinglePositionPercent: 3,
+    maxSinglePositionPercent: 1,
     minPositionSol: 0.05,
-    maxConcurrentPositions: 5,
+    maxConcurrentPositions: 2,
     highConvictionMultiplier: 1.5,
     lowConvictionMultiplier: 0.5,
     highConvictionThreshold: 85,
@@ -547,20 +562,22 @@ const BALANCED: TierConfig = {
     maxWeeklyLossPercent: 20,
     maxExposurePercent: 20,
     emergencyHaltBalanceSol: 0.5,
-    maxSingleTokenExposurePercent: 3,
+    maxSingleTokenExposurePercent: 1,
     riskPerTradePercent: 0.5,
     maxSlippageEntryPercent: 15,
     maxSlippageExitPercent: 20,
     gasReserveSol: 0.05,
     sameTradeCooldownMs: 30 * 60 * 1000,
+    globalTradeCooldownMs: 20_000,
+    maxTradesPerMinute: 2,
     reduceSizeAtRiskPercent: 3,
     stopNewTradesAtRiskPercent: 5,
     emergencyExitAtRiskPercent: 8,
   },
   capital: SHARED_CAPITAL,
   liquidity: {
-    minPoolSol: 3,
-    minPoolUsd: 300,
+    minPoolSol: 8,
+    minPoolUsd: 800,
     maxImpactPercent: 5,
     minLiquidityScore: 45,
     minLiquidityAgeSec: 120,
@@ -590,11 +607,11 @@ const BALANCED: TierConfig = {
     catastrophicDropPercent: 30,
     phaseTrails: {
       breakEvenToGain30: 0,
-      gain30to75: 15,
-      gain75to150: 12,
-      gain150to300: 10,
-      gain300to500: 8,
-      gainAbove500: 6,
+      gain30to75: 25,
+      gain75to150: 25,
+      gain150to300: 20,
+      gain300to500: 15,
+      gainAbove500: 10,
     },
   },
   smartMoney: SHARED_SMART_MONEY,
@@ -605,17 +622,20 @@ const BALANCED: TierConfig = {
 
 const AGGRESSIVE: TierConfig = {
   entry: {
-    minLiquiditySol: 1,
-    minHolderCount: 3,
-    maxTopHolderPercent: 100,
-    maxTop5HolderPercent: 100,
+    minLiquiditySol: 5,
+    minHolderCount: 10,
+    maxTopHolderPercent: 12,
+    maxTop5HolderPercent: 35,
+    maxTop10HolderPercent: 50,
     minEntryScore: 45,
-    maxPositionPercent: 3,
+    maxPositionPercent: 1,
     solSizeMin: 0.2,
     solSizeMax: 1.0,
     slippageTolerancePercent: 15,
-    maxPriceGainFromLaunch: 1000,
-    minBuyTxLast60s: 1,
+    maxPriceGainFromLaunch: 200,
+    minBuyTxLast60s: 3,
+    minTokenAgeSec: 120,
+    minRugScoreSignal: 70,
   },
   exit: {
     tp1: { sellPercent: 20, gainPercent: 100 },
@@ -624,16 +644,16 @@ const AGGRESSIVE: TierConfig = {
     residualHoldPercent: 10,
   },
   stopLoss: {
-    hardStopPercent: 25,
-    softWarningPercent: 15,
-    breakEvenActivationGain: 75,
-    trailingStopDelta: 18,
+    hardStopPercent: 15,
+    softWarningPercent: 10,
+    breakEvenActivationGain: 30,
+    trailingStopDelta: 12,
   },
   sizing: {
     basePositionPercent: 1,
-    maxSinglePositionPercent: 3,
+    maxSinglePositionPercent: 1,
     minPositionSol: 0.05,
-    maxConcurrentPositions: 5,
+    maxConcurrentPositions: 3,
     highConvictionMultiplier: 1.5,
     lowConvictionMultiplier: 0.5,
     highConvictionThreshold: 85,
@@ -645,23 +665,25 @@ const AGGRESSIVE: TierConfig = {
     maxWeeklyLossPercent: 20,
     maxExposurePercent: 20,
     emergencyHaltBalanceSol: 0.5,
-    maxSingleTokenExposurePercent: 3,
+    maxSingleTokenExposurePercent: 1,
     riskPerTradePercent: 0.5,
     maxSlippageEntryPercent: 15,
     maxSlippageExitPercent: 20,
     gasReserveSol: 0.05,
     sameTradeCooldownMs: 30 * 60 * 1000,
+    globalTradeCooldownMs: 20_000,
+    maxTradesPerMinute: 2,
     reduceSizeAtRiskPercent: 3,
     stopNewTradesAtRiskPercent: 5,
     emergencyExitAtRiskPercent: 8,
   },
   capital: SHARED_CAPITAL,
   liquidity: {
-    minPoolSol: 1,
-    minPoolUsd: 100,
+    minPoolSol: 5,
+    minPoolUsd: 500,
     maxImpactPercent: 8,
     minLiquidityScore: 30,
-    minLiquidityAgeSec: 30,
+    minLiquidityAgeSec: 120,
     impactMultiplier: 1.5,
   },
   holder: SHARED_HOLDER,
@@ -688,17 +710,17 @@ const AGGRESSIVE: TierConfig = {
     catastrophicDropPercent: 30,
     phaseTrails: {
       breakEvenToGain30: 0,
-      gain30to75: 15,
-      gain75to150: 12,
-      gain150to300: 10,
-      gain300to500: 8,
-      gainAbove500: 6,
+      gain30to75: 25,
+      gain75to150: 25,
+      gain150to300: 20,
+      gain300to500: 15,
+      gainAbove500: 10,
     },
   },
   smartMoney: SHARED_SMART_MONEY,
   whale: SHARED_WHALE,
   sentiment: SHARED_SENTIMENT,
-  filter: { ...SHARED_FILTER, minEntryScoreThreshold: 45, deferTokenAgeSec: 5 },
+  filter: { ...SHARED_FILTER, minEntryScoreThreshold: 45 },
 };
 
 const TIER_CONFIGS: Record<StrategyTier, TierConfig> = {

@@ -1,4 +1,4 @@
-// UPDATED: Max slippage entry 35% -> 25% - 2026-03-07
+// UPDATED: Disable Type A sniper, tighten signal stack, add buy/sell ratio gates - 2026-03-09
 import { BaseStrategy } from './BaseStrategy.js';
 import { getTierConfig, type TierConfig } from './config.js';
 import { logger } from '../utils/logger.js';
@@ -89,36 +89,46 @@ export class EntryStrategy extends BaseStrategy {
   private passesSignalStack(ctx: StrategyContext): boolean {
     const cfg = this.tierConfig.entry;
     const tokenMint = ctx.tokenInfo.mintAddress.slice(0, 12);
-    const minLiq = parseFloat(process.env.MIN_LIQUIDITY_FOR_SIGNAL ?? '1') || 1;
-    const minBuys = parseInt(process.env.MIN_BUYS_LAST_60S ?? '1', 10) || 1;
-    const minRugScoreSignal = parseInt(process.env.MIN_RUG_SCORE_SIGNAL ?? '60', 10) || 60;
 
-    // Log diagnóstico completo: mostra TODOS os valores para identificar a condição exata que falha
     logger.debug('SIGNAL_STACK_CHECK', {
       tokenMint,
       liquidity: ctx.liquidity,
-      minLiq,
+      minLiq: cfg.minLiquiditySol,
+      tokenAgeSec: ctx.tokenAgeSec,
+      minTokenAgeSec: cfg.minTokenAgeSec,
       holderCount: ctx.holderData.holderCount,
       minHolderCount: cfg.minHolderCount,
       topHolderPct: ctx.holderData.topHolderPercent.toFixed(1),
       maxTopHolderPct: cfg.maxTopHolderPercent,
       top5HolderPct: ctx.holderData.top5HolderPercent.toFixed(1),
       maxTop5HolderPct: cfg.maxTop5HolderPercent,
+      top10HolderPct: ctx.holderData.top10HolderPercent?.toFixed(1) ?? 'n/a',
+      maxTop10HolderPct: cfg.maxTop10HolderPercent,
       mintAuthDisabled: ctx.safetyData.mintAuthorityDisabled,
       freezeAbsent: ctx.safetyData.freezeAuthorityAbsent,
       buyTxLast60s: ctx.volumeContext.buyTxLast60s,
-      minBuys,
+      minBuys: cfg.minBuyTxLast60s,
       isBlacklisted: ctx.safetyData.isBlacklisted,
       rugScore: ctx.safetyData.rugScore,
-      minRugScore: minRugScoreSignal,
+      minRugScore: cfg.minRugScoreSignal,
     });
 
-    if (ctx.liquidity < minLiq) {
+    if (ctx.tokenAgeSec < cfg.minTokenAgeSec) {
+      logger.debug('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'tokenAge',
+        value: ctx.tokenAgeSec,
+        required: cfg.minTokenAgeSec,
+      });
+      return false;
+    }
+
+    if (ctx.liquidity < cfg.minLiquiditySol) {
       logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'liquidity',
         value: ctx.liquidity,
-        required: minLiq,
+        required: cfg.minLiquiditySol,
       });
       return false;
     }
@@ -153,6 +163,17 @@ export class EntryStrategy extends BaseStrategy {
       return false;
     }
 
+    const top10 = ctx.holderData.top10HolderPercent;
+    if (top10 !== undefined && top10 > cfg.maxTop10HolderPercent) {
+      logger.debug('SIGNAL_STACK_FAIL', {
+        tokenMint,
+        failedCondition: 'top10HolderPercent',
+        value: top10,
+        required: cfg.maxTop10HolderPercent,
+      });
+      return false;
+    }
+
     if (!ctx.safetyData.mintAuthorityDisabled) {
       logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
@@ -173,12 +194,12 @@ export class EntryStrategy extends BaseStrategy {
       return false;
     }
 
-    if (ctx.volumeContext.buyTxLast60s < minBuys) {
+    if (ctx.volumeContext.buyTxLast60s < cfg.minBuyTxLast60s) {
       logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'buyTxLast60s',
         value: ctx.volumeContext.buyTxLast60s,
-        required: minBuys,
+        required: cfg.minBuyTxLast60s,
       });
       return false;
     }
@@ -193,12 +214,12 @@ export class EntryStrategy extends BaseStrategy {
       return false;
     }
 
-    if (ctx.safetyData.rugScore < minRugScoreSignal) {
+    if (ctx.safetyData.rugScore < cfg.minRugScoreSignal) {
       logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'rugScore',
         value: ctx.safetyData.rugScore,
-        required: minRugScoreSignal,
+        required: cfg.minRugScoreSignal,
       });
       return false;
     }
@@ -211,10 +232,10 @@ export class EntryStrategy extends BaseStrategy {
     const maxGain = this.tierConfig.entry.maxPriceGainFromLaunch;
 
     if (ctx.priceChangeFromLaunch > maxGain) {
-      if (!ctx.smartMoneyData.smartMoneyHolding) {
-        return true;
-      }
-      if (ctx.volumeContext.volume1min <= ctx.volumeContext.volume5minAvg) {
+      const hasSmartMoneyConfirmation = ctx.smartMoneyData.smartMoneyHolding && ctx.smartMoneyData.tier1WalletsBuying >= 1;
+      const hasWhaleAccumulation = ctx.whaleData.whaleDistinctBuyers5min >= 2;
+
+      if (!hasSmartMoneyConfirmation && !hasWhaleAccumulation) {
         return true;
       }
     }
@@ -326,19 +347,17 @@ export class EntryStrategy extends BaseStrategy {
   }
 
   private determineTriggerType(ctx: StrategyContext): EntryTriggerType | null {
-    if (ctx.tokenAgeSec < 60 && ctx.liquidity > 0) {
-      return 'new_token_sniper';
-    }
+    // Type A (new_token_sniper) DISABLED — extreme rug pull probability on tokens < 60s
 
-    if (ctx.tokenAgeSec < 600 && ctx.poolInitialSol >= this.tierConfig.entry.minLiquiditySol) {
+    if (ctx.tokenAgeSec >= 120 && ctx.tokenAgeSec <= 600 && ctx.poolInitialSol >= this.tierConfig.entry.minLiquiditySol) {
       return 'pool_creation_sniper';
     }
 
-    if (ctx.previouslyTraded && ctx.priceDropFromPeak >= 40 && ctx.priceDropFromPeak <= 70) {
+    if (ctx.previouslyTraded && ctx.priceDropFromPeak >= 35 && ctx.priceDropFromPeak <= 60) {
       return 'dip_reentry';
     }
 
-    if (ctx.tokenAgeSec >= 60 && ctx.tokenAgeSec <= 1800) {
+    if (ctx.tokenAgeSec >= 180 && ctx.tokenAgeSec <= 1800) {
       return 'momentum_confirmation';
     }
 
@@ -385,9 +404,18 @@ export class EntryStrategy extends BaseStrategy {
     if (ctx.safetyData.isBlacklisted) {
       return { pass: false, reason: 'Token is blacklisted' };
     }
-    const minHolders = this.tierConfig.entry.minHolderCount;
-    if (ctx.holderData.holderCount < minHolders) {
-      return { pass: false, reason: `Holder count ${ctx.holderData.holderCount} < ${minHolders}` };
+    if (ctx.holderData.holderCount < 10) {
+      return { pass: false, reason: `Holder count ${ctx.holderData.holderCount} < 10` };
+    }
+    if (ctx.holderData.topHolderPercent > 12) {
+      return { pass: false, reason: `Top holder ${ctx.holderData.topHolderPercent.toFixed(1)}% > 12%` };
+    }
+    if (ctx.buySellRatio5min < 0.60) {
+      return { pass: false, reason: `Buy/sell ratio ${ctx.buySellRatio5min.toFixed(2)} < 0.60` };
+    }
+    const uniqueBuyers2min = ctx.uniqueBuyers2min ?? 0;
+    if (uniqueBuyers2min < 8) {
+      return { pass: false, reason: `Unique buyers (2min) ${uniqueBuyers2min} < 8` };
     }
     return { pass: true, reason: 'Type B pool creation conditions met' };
   }
@@ -397,17 +425,23 @@ export class EntryStrategy extends BaseStrategy {
       ? ctx.volumeContext.volume1min / ctx.volumeContext.volume5minAvg
       : 0;
 
-    if (volumeRatio < 3) {
-      return { pass: false, reason: `Volume ratio ${volumeRatio.toFixed(1)} < 3x threshold` };
+    if (volumeRatio < 2.5) {
+      return { pass: false, reason: `Volume ratio ${volumeRatio.toFixed(1)} < 2.5x threshold` };
     }
-    if (ctx.priceChangePercent5min < 15) {
-      return { pass: false, reason: `5min price change ${ctx.priceChangePercent5min.toFixed(1)}% < 15%` };
+    if (ctx.priceChangePercent5min < 8 || ctx.priceChangePercent5min > 80) {
+      return { pass: false, reason: `5min price change ${ctx.priceChangePercent5min.toFixed(1)}% not in 8–80% range` };
     }
     if (ctx.holderData.holderGrowthRate < 2) {
       return { pass: false, reason: `Holder growth ${ctx.holderData.holderGrowthRate.toFixed(1)}/min < 2/min` };
     }
-    if (ctx.liquidityUsd < 5000) {
-      return { pass: false, reason: `Liquidity $${ctx.liquidityUsd.toFixed(0)} < $5,000` };
+    if (ctx.liquidityUsd < 15_000) {
+      return { pass: false, reason: `Liquidity $${ctx.liquidityUsd.toFixed(0)} < $15,000` };
+    }
+    if (ctx.buySellRatio5min < 0.60) {
+      return { pass: false, reason: `Buy/sell ratio ${ctx.buySellRatio5min.toFixed(2)} < 0.60` };
+    }
+    if (ctx.uniqueBuyers5min < 15) {
+      return { pass: false, reason: `Unique buyers (5min) ${ctx.uniqueBuyers5min} < 15` };
     }
     return { pass: true, reason: 'Type C momentum confirmation conditions met' };
   }
@@ -416,14 +450,20 @@ export class EntryStrategy extends BaseStrategy {
     if (!ctx.previouslyTraded) {
       return { pass: false, reason: 'Not previously traded' };
     }
-    if (ctx.priceDropFromPeak < 40 || ctx.priceDropFromPeak > 70) {
-      return { pass: false, reason: `Price drop ${ctx.priceDropFromPeak.toFixed(1)}% not in 40–70% range` };
+    if (ctx.priceDropFromPeak < 35 || ctx.priceDropFromPeak > 60) {
+      return { pass: false, reason: `Price drop ${ctx.priceDropFromPeak.toFixed(1)}% not in 35–60% range` };
     }
-    if (!ctx.volumeContext.volumeStillActive) {
-      return { pass: false, reason: 'Volume no longer active' };
+    const volumeRatio = ctx.volumeContext.volume5minAvg > 0
+      ? ctx.volumeContext.volume1min / ctx.volumeContext.volume5minAvg
+      : 0;
+    if (volumeRatio < 0.70) {
+      return { pass: false, reason: `Volume ratio ${volumeRatio.toFixed(2)} < 70% of average` };
     }
     if (ctx.holderData.holdersDecreasing) {
       return { pass: false, reason: 'Holder count is decreasing' };
+    }
+    if (ctx.buySellRatio5min < 0.55) {
+      return { pass: false, reason: `Buy/sell ratio ${ctx.buySellRatio5min.toFixed(2)} < 0.55` };
     }
     return { pass: true, reason: 'Type D dip re-entry conditions met' };
   }
@@ -434,19 +474,15 @@ export class EntryStrategy extends BaseStrategy {
     triggerType: EntryTriggerType,
   ): number {
     const cfg = this.tierConfig.entry;
-    const basePercent = cfg.maxPositionPercent / 100;
-    let sizeSol = ctx.liquidity * basePercent;
+    const maxPoolPercent = cfg.maxPositionPercent / 100;
+    let sizeSol = ctx.liquidity * maxPoolPercent;
 
     sizeSol *= confidence;
 
     sizeSol = Math.max(cfg.solSizeMin, Math.min(cfg.solSizeMax, sizeSol));
 
     if (triggerType === 'dip_reentry') {
-      sizeSol *= 0.5;
-    }
-
-    if (triggerType === 'new_token_sniper') {
-      sizeSol = Math.min(sizeSol, cfg.solSizeMax);
+      sizeSol *= 0.4;
     }
 
     return Math.round(sizeSol * 1_000_000_000) / 1_000_000_000;

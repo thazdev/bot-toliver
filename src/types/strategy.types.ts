@@ -13,6 +13,7 @@ export interface HolderData {
   holderCount: number;
   topHolderPercent: number;
   top5HolderPercent: number;
+  top10HolderPercent?: number;
   holderGrowthRate: number;
   holdersDecreasing: boolean;
 }
@@ -80,6 +81,7 @@ export interface WhaleActivityData {
   whaleFirstBuyerSelling: boolean;
   whaleWashTradeDetected: boolean;
   whaleConfidenceScore: number;
+  totalWhaleBuySol5min?: number;
 }
 
 export interface SentimentData {
@@ -138,6 +140,8 @@ export interface StrategyContext {
   price60sAgo: number;
   priceRising: boolean;
   uniqueBuyers5min: number;
+  uniqueBuyers2min?: number;
+  uniqueBuyers10min?: number;
   buySellRatio5min: number;
   liquidityStable: boolean;
   tokenSource: 'pumpfun' | 'raydium' | 'unknown';
