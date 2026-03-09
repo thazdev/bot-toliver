@@ -140,6 +140,7 @@ export class PollingFallbackListener extends BaseListener {
               initialPrice: 0,
               isMutable: false,
               hasFreezable: false,
+              hasMintAuthority: false,
               metadataUri: '',
             };
             this.onEvent({ type: 'TOKEN_DETECTED', timestamp: blockTime * 1000, data: tokenData });

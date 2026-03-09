@@ -12,6 +12,8 @@ export interface TokenInfo {
   initialPrice: number;
   isMutable: boolean;
   hasFreezable: boolean;
+  /** True when the mint authority COption is Some (data[0] === 1) — token supply can still be inflated */
+  hasMintAuthority: boolean;
   metadataUri: string;
   /** Optional: set when token is detected from pool logs */
   poolAddress?: string;

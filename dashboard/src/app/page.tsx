@@ -18,6 +18,7 @@ import type {
   BotHealth,
   OpenPosition,
   DryRunOpenPosition,
+  DryRunClosedPosition,
   PositionHistoryResponse,
 } from '@/types';
 
@@ -102,8 +103,15 @@ export default function OverviewPage() {
     { refreshInterval: 10_000 },
   );
 
+  const { data: dryRunClosedData } = useSWR<{ positions: DryRunClosedPosition[] }>(
+    '/api/positions/dry-run/closed',
+    fetcher,
+    { refreshInterval: 10_000 },
+  );
+
   const dryRunPositions = dryRunData?.positions ?? [];
   const recentTrades = historyData?.positions ?? [];
+  const dryRunClosed = dryRunClosedData?.positions ?? [];
 
   const botStopped =
     health && health.status !== 'RUNNING' && health.status !== 'DRY_RUN';
@@ -343,7 +351,7 @@ export default function OverviewPage() {
           Últimos Trades
         </h2>
         <div className="overflow-x-auto rounded-2xl border border-card-border bg-card">
-          {recentTrades.length === 0 ? (
+          {recentTrades.length === 0 && dryRunClosed.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-slate-500">
               Nenhum trade recente
             </p>
@@ -356,9 +364,11 @@ export default function OverviewPage() {
                   <th className="px-4 py-3">Valor SOL</th>
                   <th className="px-4 py-3">P&L</th>
                   <th className="px-4 py-3">Data</th>
+                  <th className="px-4 py-3">Modo</th>
                 </tr>
               </thead>
               <tbody>
+                {/* Real trades from positions table */}
                 {recentTrades.map((t) => {
                   const isSell = t.exitPrice != null;
                   const profit = t.pnlSol > 0;
@@ -409,6 +419,64 @@ export default function OverviewPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-400">
                         {formatTimestamp(t.closedAt ?? t.openedAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="rounded-full border border-orange-500/30 bg-orange-500/15 px-2 py-0.5 text-xs font-semibold text-orange-400">
+                          REAL
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {/* Dry-run closed trades from Redis */}
+                {dryRunClosed.slice(0, 10).map((t) => {
+                  const profit = t.finalPnlSOL > 0;
+
+                  return (
+                    <tr
+                      key={`dry-${t.id}`}
+                      className="border-b border-card-border/50 border-l-2 border-l-blue-500/40 transition-colors hover:bg-white/[0.02]"
+                    >
+                      <td className="px-4 py-3">
+                        <a
+                          href={`https://solscan.io/token/${t.tokenMint}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-mono text-indigo-400 hover:underline"
+                        >
+                          {truncateMint(t.tokenMint)}
+                          <ExternalLink className="h-3 w-3 opacity-50" />
+                        </a>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-400">
+                          SELL
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-slate-300">
+                        {t.amountSOL.toFixed(4)}
+                      </td>
+                      <td
+                        className={clsx(
+                          'px-4 py-3 font-semibold',
+                          profit ? 'text-emerald-400' : 'text-red-400',
+                        )}
+                      >
+                        {profit ? '+' : ''}
+                        {t.finalPnlPct.toFixed(2)}%
+                        <span className="ml-1 text-xs opacity-70">
+                          ({profit ? '+' : ''}
+                          {t.finalPnlSOL.toFixed(4)})
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">
+                        {formatTimestamp(t.exitTime)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="rounded-full border border-blue-500/30 bg-blue-500/15 px-2 py-0.5 text-xs font-semibold text-blue-400">
+                          DRY-RUN
+                        </span>
                       </td>
                     </tr>
                   );

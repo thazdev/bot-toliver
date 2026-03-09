@@ -129,6 +129,7 @@ export class TokenRepository {
       initialPrice: Number(row.initial_price_sol),
       isMutable: Boolean(row.is_mutable),
       hasFreezable: Boolean(row.has_freeze_authority),
+      hasMintAuthority: false, // not persisted in DB — re-evaluated on scan
       metadataUri: row.metadata_uri,
       createdAt: row.created_at,
     };

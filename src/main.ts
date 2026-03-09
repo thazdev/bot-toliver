@@ -400,7 +400,7 @@ async function main(): Promise<void> {
           volumeDropPercent60s: 0,
         };
         const defaultSafetyData: SafetyData = {
-          mintAuthorityDisabled: !tokenInfo.isMutable,
+          mintAuthorityDisabled: !tokenInfo.hasMintAuthority,
           freezeAuthorityAbsent: !tokenInfo.hasFreezable,
           isBlacklisted: false,
           rugScore: 70,

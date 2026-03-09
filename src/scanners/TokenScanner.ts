@@ -71,6 +71,7 @@ export class TokenScanner {
       let decimals = 0;
       let supply = '0';
       let hasFreezeAuthority = false;
+      let hasMintAuthority = false;
       let isMutable = false;
 
       let cachedAccountData: string | null = null;
@@ -80,10 +81,11 @@ export class TokenScanner {
       } catch {}
 
       if (cachedAccountData) {
-        const parsed = JSON.parse(cachedAccountData) as { decimals: number; supply: string; freeze: boolean; mutable: boolean };
+        const parsed = JSON.parse(cachedAccountData) as { decimals: number; supply: string; freeze: boolean; mutable: boolean; mintAuth?: boolean };
         decimals = parsed.decimals;
         supply = parsed.supply;
         hasFreezeAuthority = parsed.freeze;
+        hasMintAuthority = parsed.mintAuth ?? false;
         isMutable = parsed.mutable;
         logger.debug('TokenScanner: accountInfo cache hit', { mint: mintAddress.slice(0, 12) });
       } else {
@@ -98,19 +100,29 @@ export class TokenScanner {
 
         const data = accountInfo.data;
         if (data.length >= 82) {
+          // SPL Token Mint layout:
+          //   [0..3]   mint_authority COption  (0=None, 1=Some)
+          //   [4..35]  mint_authority pubkey
+          //   [36..43] supply (u64 LE)
+          //   [44]     decimals
+          //   [45]     is_initialized
+          //   [46..49] freeze_authority COption (0=None, 1=Some)
+          //   [50..81] freeze_authority pubkey
+          hasMintAuthority = data[0] === 1;
           decimals = data[44];
-          hasFreezeAuthority = data[45] === 1;
+          hasFreezeAuthority = data[46] === 1; // FIX: was data[45] (is_initialized, always 1)
           const supplyBytes = data.slice(36, 44);
           supply = Buffer.from(supplyBytes).readBigUInt64LE().toString();
         }
 
+        // isMutable refers to metadata mutability — kept for backward compat
         if (accountInfo.owner.toBase58() === 'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s') {
           isMutable = true;
         }
 
         try {
           const redis = RedisClient.getInstance().getClient();
-          await redis.set(accountCacheKey, JSON.stringify({ decimals, supply, freeze: hasFreezeAuthority, mutable: isMutable }), 'EX', 60);
+          await redis.set(accountCacheKey, JSON.stringify({ decimals, supply, freeze: hasFreezeAuthority, mintAuth: hasMintAuthority, mutable: isMutable }), 'EX', 60);
         } catch {}
       }
 
@@ -128,6 +140,7 @@ export class TokenScanner {
         initialPrice: poolInfo?.price ?? 0,
         isMutable,
         hasFreezable: hasFreezeAuthority,
+        hasMintAuthority,
         metadataUri: '',
       };
 

@@ -61,7 +61,7 @@ export class RugDetector {
       reasons.push(`Dev wallet has prior rug history (${RUG_SCORE_RULES.devRugHistoryPenalty})`);
     }
 
-    if (input.tokenInfo.isMutable === false) {
+    if (!input.tokenInfo.hasMintAuthority) {
       score += RUG_SCORE_RULES.mintAuthorityBurned;
       reasons.push(`Mint authority burned (+${RUG_SCORE_RULES.mintAuthorityBurned})`);
     }

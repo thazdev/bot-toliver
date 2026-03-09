@@ -92,6 +92,7 @@ export class TokenMintListener extends BaseListener {
         initialPrice: 0,
         isMutable: false,
         hasFreezable: false,
+        hasMintAuthority: false,
         metadataUri: '',
       },
     });
