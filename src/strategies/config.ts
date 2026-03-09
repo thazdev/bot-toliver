@@ -413,8 +413,8 @@ const CONSERVATIVE: TierConfig = {
   entry: {
     minLiquiditySol: 2,
     minHolderCount: 10,
-    maxTopHolderPercent: 85,
-    maxTop5HolderPercent: 95,
+    maxTopHolderPercent: 100,
+    maxTop5HolderPercent: 100,
     minEntryScore: 75,
     maxPositionPercent: 3.3,
     solSizeMin: 0.02,
