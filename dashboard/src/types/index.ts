@@ -68,6 +68,7 @@ export interface BotHealth {
   mode: 'dry-run' | 'real';
   lastHeartbeat: string | null;
   uptimeSeconds: number;
+  buysPaused: boolean;
 }
 
 export interface WalletBalance {

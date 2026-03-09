@@ -51,6 +51,7 @@ import { getTierConfig } from './strategies/config.js';
 import { getEffectiveDryRun } from './config/DryRunResolver.js';
 import { getOpenPositionsTotalSOL } from './services/DryRunPositionService.js';
 import { isBotEnabled } from './config/BotEnabledResolver.js';
+import { areBuysPaused } from './config/BuysPausedResolver.js';
 import { setConnectionsPaused } from './config/ConnectionsPausedResolver.js';
 import { BotLifecycle } from './core/BotLifecycle.js';
 import { AlertService } from './alerts/AlertService.js';
@@ -641,8 +642,14 @@ async function main(): Promise<void> {
         }
 
         if (buySignal && buySignal.confidence > 0) {
+          if (await areBuysPaused()) {
+            logger.debug('TOKEN_SCAN: compras pausadas pelo dashboard — ignorando sinal de compra', {
+              tokenMint: tokenMint.slice(0, 12),
+            });
+            return;
+          }
+
           const dryRun = await getEffectiveDryRun(config);
-          // Atualizar exposure com posições dry run abertas (capital em uso)
           if (dryRun) {
             const dryRunExposure = await getOpenPositionsTotalSOL();
             const realExposure = positionManager.getOpenPositions().reduce((s, p) => s + p.amountSol, 0);
@@ -810,6 +817,14 @@ async function main(): Promise<void> {
 
   workerManager.registerWorker(QueueName.TRADE_EXECUTE, async (job) => {
     const payload = job.data as TradeExecuteJobPayload;
+
+    if (payload.tradeRequest.direction === 'buy' && await areBuysPaused()) {
+      logger.debug('TRADE_EXECUTE: compras pausadas — buy job descartado', {
+        tokenMint: payload.tradeRequest.tokenMint.slice(0, 12),
+      });
+      return;
+    }
+
     const riskCheck = await riskManager.preTradeCheck(payload.tradeRequest);
 
     if (!riskCheck.approved) {

@@ -16,12 +16,15 @@ export async function GET() {
   try {
     await redis.connect().catch(() => {});
 
-    const [healthRaw, mode, enabledRaw, lifecycleState] = await Promise.all([
+    const [healthRaw, mode, enabledRaw, lifecycleState, buysPausedRaw] = await Promise.all([
       redis.get('bot_health').catch(() => null),
       getBotMode(),
       redis.get('bot:enabled').catch(() => null),
       redis.get('bot:lifecycle_state').catch(() => null),
+      redis.get('bot:buys_paused').catch(() => null),
     ]);
+
+    const buysPaused = buysPausedRaw === 'true';
 
     const enabled = enabledRaw !== 'false';
 
@@ -45,6 +48,7 @@ export async function GET() {
         mode,
         lastHeartbeat: health.lastHeartbeat ?? health.timestamp ?? null,
         uptimeSeconds: health.uptimeSeconds ?? 0,
+        buysPaused,
       } satisfies BotHealth);
     }
 
@@ -55,6 +59,7 @@ export async function GET() {
         mode,
         lastHeartbeat: null,
         uptimeSeconds: 0,
+        buysPaused,
       } satisfies BotHealth);
     }
 
@@ -78,6 +83,7 @@ export async function GET() {
         mode,
         lastHeartbeat: latestStat?.snapshotAt?.toISOString() ?? null,
         uptimeSeconds: latestStat ? Number(latestStat.uptimeSeconds) : 0,
+        buysPaused,
       } satisfies BotHealth);
     }
   } catch {
@@ -86,6 +92,7 @@ export async function GET() {
       mode: 'dry-run',
       lastHeartbeat: null,
       uptimeSeconds: 0,
+      buysPaused: false,
     } satisfies BotHealth);
   }
 }

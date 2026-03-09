@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   ExternalLink,
   RotateCcw,
+  ShoppingCart,
 } from 'lucide-react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { Header } from '@/components/layout/Header';
@@ -81,6 +82,30 @@ function KpiCard({
 export default function OverviewPage() {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
+  const [togglingBuys, setTogglingBuys] = useState(false);
+
+  const { data: buysStatus, mutate: mutateBuys } = useSWR<{ buysPaused: boolean }>(
+    '/api/bot/toggle-buys',
+    fetcher,
+    { refreshInterval: 5_000 },
+  );
+  const buysPaused = buysStatus?.buysPaused ?? false;
+
+  const handleToggleBuys = useCallback(async () => {
+    setTogglingBuys(true);
+    try {
+      const res = await fetch('/api/bot/toggle-buys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused: !buysPaused }),
+      });
+      if (res.ok) {
+        await mutateBuys();
+      }
+    } catch {} finally {
+      setTogglingBuys(false);
+    }
+  }, [buysPaused, mutateBuys]);
 
   const handleReset = useCallback(async () => {
     if (!confirm('Tem certeza que deseja resetar TODAS as posições e trades? Esta ação não pode ser desfeita.')) return;
@@ -157,6 +182,13 @@ export default function OverviewPage() {
         </div>
       )}
 
+      {buysPaused && !botStopped && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-400">
+          <ShoppingCart className="h-4 w-4 shrink-0" />
+          Compras pausadas &mdash; vendas e monitoramento continuam ativos
+        </div>
+      )}
+
       {/* Reset bar */}
       <div className="mb-4 flex items-center justify-between">
         <div>
@@ -169,19 +201,36 @@ export default function OverviewPage() {
             </span>
           )}
         </div>
-        <button
-          onClick={handleReset}
-          disabled={resetting}
-          className={clsx(
-            'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors',
-            resetting
-              ? 'cursor-not-allowed border-slate-600 bg-slate-700/50 text-slate-500'
-              : 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/50',
-          )}
-        >
-          <RotateCcw className={clsx('h-4 w-4', resetting && 'animate-spin')} />
-          {resetting ? 'Resetando...' : 'Resetar Trades'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleToggleBuys}
+            disabled={togglingBuys}
+            className={clsx(
+              'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors',
+              togglingBuys
+                ? 'cursor-not-allowed border-slate-600 bg-slate-700/50 text-slate-500'
+                : buysPaused
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50'
+                  : 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/50',
+            )}
+          >
+            <ShoppingCart className="h-4 w-4" />
+            {togglingBuys ? 'Aguarde...' : buysPaused ? 'Retomar Compras' : 'Pausar Compras'}
+          </button>
+          <button
+            onClick={handleReset}
+            disabled={resetting}
+            className={clsx(
+              'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors',
+              resetting
+                ? 'cursor-not-allowed border-slate-600 bg-slate-700/50 text-slate-500'
+                : 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/50',
+            )}
+          >
+            <RotateCcw className={clsx('h-4 w-4', resetting && 'animate-spin')} />
+            {resetting ? 'Resetando...' : 'Resetar Trades'}
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
