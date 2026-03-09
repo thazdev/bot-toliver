@@ -607,8 +607,8 @@ const AGGRESSIVE: TierConfig = {
   entry: {
     minLiquiditySol: 1,
     minHolderCount: 3,
-    maxTopHolderPercent: 20,
-    maxTop5HolderPercent: 40,
+    maxTopHolderPercent: 100,
+    maxTop5HolderPercent: 100,
     minEntryScore: 45,
     maxPositionPercent: 3,
     solSizeMin: 0.2,

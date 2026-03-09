@@ -56,7 +56,7 @@ import { BotLifecycle } from './core/BotLifecycle.js';
 import { AlertService } from './alerts/AlertService.js';
 import { StatsTracker } from './stats/StatsTracker.js';
 import { StatsSnapshot } from './stats/StatsSnapshot.js';
-import { PositionSizer, MINIMUM_TRADE_SIZE_SOL } from './capital/PositionSizer.js';
+import { PositionSizer } from './capital/PositionSizer.js';
 import { RugDetector } from './analysis/RugDetector.js';
 import { ScamDetector } from './analysis/ScamDetector.js';
 import { LiquidityAnalyzer } from './analysis/LiquidityAnalyzer.js';
@@ -652,7 +652,7 @@ async function main(): Promise<void> {
           const sizeSol = positionSizer.calculatePositionSize(buySignal.confidence);
           const baseSize = sizeSol > 0 ? sizeSol : buySignal.suggestedSizeSol;
           const finalSize = baseSize * guardStatus.positionSizeMultiplier;
-          const minSize = dryRun ? MINIMUM_TRADE_SIZE_SOL : getTierConfig(config.trading.strategyTier).sizing.minPositionSol;
+          const minSize = getTierConfig(config.trading.strategyTier).sizing.minPositionSol;
 
           if (isDebugToken) {
             logger.debug('DEBUG_TRACE: POSITION_SIZE', {
