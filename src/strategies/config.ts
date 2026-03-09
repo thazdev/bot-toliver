@@ -503,7 +503,7 @@ const CONSERVATIVE: TierConfig = {
   smartMoney: SHARED_SMART_MONEY,
   whale: SHARED_WHALE,
   sentiment: SHARED_SENTIMENT,
-  filter: { ...SHARED_FILTER, minEntryScoreThreshold: 75 },
+  filter: { ...SHARED_FILTER, minEntryScoreThreshold: 60 },
 };
 
 const BALANCED: TierConfig = {
@@ -819,7 +819,7 @@ export const VOLUME_ANOMALY_RULES = {
 } as const;
 
 export const LAUNCH_PHASE_RULES = {
-  birthMaxSec: parseInt(process.env.BIRTH_MAX_SEC ?? '10', 10) || 10, // 0-10s bloqueado; 10-60s entra ignition (teste)
+  birthMaxSec: parseInt(process.env.BIRTH_MAX_SEC ?? '3', 10) || 3,
   ignitionMaxSec: 300,
   discoveryMaxSec: 900,
   momentumMaxSec: 3600,

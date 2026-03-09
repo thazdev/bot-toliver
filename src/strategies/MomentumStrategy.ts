@@ -40,8 +40,9 @@ export class MomentumStrategy extends BaseStrategy {
 
     const volTrend = this.calculateVolTrend(context);
     const cfg = this.tierConfig.momentum;
+    const hasVolumeData = context.volumeContext.volume5minAvg > 0;
 
-    if (volTrend < cfg.volumeCollapsingThreshold) {
+    if (hasVolumeData && volTrend < cfg.volumeCollapsingThreshold) {
       if (context.position) {
         return {
           signal: 'sell',
@@ -51,6 +52,10 @@ export class MomentumStrategy extends BaseStrategy {
         };
       }
       return skip(`Volume collapsing: vol_trend ${volTrend.toFixed(2)} < ${cfg.volumeCollapsingThreshold}`);
+    }
+
+    if (!hasVolumeData) {
+      return skip('No volume data available — skipping momentum evaluation');
     }
 
     const decayDecision = this.checkMomentumDecay(context.tokenInfo.mintAddress, context);
