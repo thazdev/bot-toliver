@@ -415,7 +415,7 @@ const CONSERVATIVE: TierConfig = {
     minHolderCount: 10,
     maxTopHolderPercent: 100,
     maxTop5HolderPercent: 100,
-    minEntryScore: 75,
+    minEntryScore: 50,
     maxPositionPercent: 3.3,
     solSizeMin: 0.02,
     solSizeMax: 0.03,
@@ -819,7 +819,7 @@ export const VOLUME_ANOMALY_RULES = {
 } as const;
 
 export const LAUNCH_PHASE_RULES = {
-  birthMaxSec: parseInt(process.env.BIRTH_MAX_SEC ?? '3', 10) || 3,
+  birthMaxSec: (() => { const v = parseInt(process.env.BIRTH_MAX_SEC ?? '0', 10); return isNaN(v) ? 0 : v; })(),
   ignitionMaxSec: 300,
   discoveryMaxSec: 900,
   momentumMaxSec: 3600,

@@ -91,6 +91,27 @@ export class EntryStrategy extends BaseStrategy {
     const tokenMint = ctx.tokenInfo.mintAddress.slice(0, 12);
     const minLiq = parseFloat(process.env.MIN_LIQUIDITY_FOR_SIGNAL ?? '1') || 1;
     const minBuys = parseInt(process.env.MIN_BUYS_LAST_60S ?? '1', 10) || 1;
+    const minRugScoreSignal = parseInt(process.env.MIN_RUG_SCORE_SIGNAL ?? '60', 10) || 60;
+
+    // Log diagnóstico completo: mostra TODOS os valores para identificar a condição exata que falha
+    logger.debug('SIGNAL_STACK_CHECK', {
+      tokenMint,
+      liquidity: ctx.liquidity,
+      minLiq,
+      holderCount: ctx.holderData.holderCount,
+      minHolderCount: cfg.minHolderCount,
+      topHolderPct: ctx.holderData.topHolderPercent.toFixed(1),
+      maxTopHolderPct: cfg.maxTopHolderPercent,
+      top5HolderPct: ctx.holderData.top5HolderPercent.toFixed(1),
+      maxTop5HolderPct: cfg.maxTop5HolderPercent,
+      mintAuthDisabled: ctx.safetyData.mintAuthorityDisabled,
+      freezeAbsent: ctx.safetyData.freezeAuthorityAbsent,
+      buyTxLast60s: ctx.volumeContext.buyTxLast60s,
+      minBuys,
+      isBlacklisted: ctx.safetyData.isBlacklisted,
+      rugScore: ctx.safetyData.rugScore,
+      minRugScore: minRugScoreSignal,
+    });
 
     if (ctx.liquidity < minLiq) {
       logger.debug('SIGNAL_STACK_FAIL', {
@@ -172,16 +193,17 @@ export class EntryStrategy extends BaseStrategy {
       return false;
     }
 
-    if (ctx.safetyData.rugScore < 70) {
+    if (ctx.safetyData.rugScore < minRugScoreSignal) {
       logger.debug('SIGNAL_STACK_FAIL', {
         tokenMint,
         failedCondition: 'rugScore',
         value: ctx.safetyData.rugScore,
-        required: 70,
+        required: minRugScoreSignal,
       });
       return false;
     }
 
+    logger.debug('SIGNAL_STACK_PASSED', { tokenMint });
     return true;
   }
 
