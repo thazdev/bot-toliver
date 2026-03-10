@@ -82,12 +82,8 @@ export class TradeFilterPipeline {
       scores: {},
     };
 
-    try {
-      const redis = RedisClient.getInstance().getClient();
-      await redis.incr('diag:tokens_received_total');
-    } catch {
-      // Non-critical: diagnóstico
-    }
+    // Nota: diag:tokens_received_total é incrementado em main.ts após filtros institucionais
+    // (antes de Signal Stack), pois o pipeline só é chamado quando Signal Stack passa.
 
     // ── Emergency Halt ──────────────────────────────────────────────
     if (this.emergencyHalt) {

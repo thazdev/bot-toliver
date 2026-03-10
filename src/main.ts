@@ -436,6 +436,13 @@ async function main(): Promise<void> {
           return;
         }
 
+        try {
+          const redis = RedisClient.getInstance().getClient();
+          await redis.incr('diag:tokens_received_total');
+        } catch {
+          // Non-critical
+        }
+
         const defaultVolumeContext: VolumeContext = {
           volume1min: dexVolume.volume1min ?? 0,
           volume5minAvg: dexVolume.volume5minAvg ?? 0,
