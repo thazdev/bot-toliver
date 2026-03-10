@@ -85,7 +85,9 @@ export class DexScreenerVolumeFetcher {
       // Para momentum: volume5minAvg > 0 desbloqueia a estratégia
       const volume5minAvg = volM5;
       const volume1min = volM5 > 0 ? volM5 / 5 : 0;
-      const buyTxLast60s = Math.round((buysM5 + buysH1 / 60) / 2) || buysM5;
+      // txns.m5 = total em 5 min → buy_tx_60s = buysM5/5 (estimativa correta para 60s)
+      const buyTxLast60s = Math.round(buysM5 / 5);
+      const buyTxLast120s = Math.round((buysM5 * 2) / 5);
       const sellTxLast20 = sellsM5;
       const buyTxLast20 = buysM5;
       const txnsPerMinute = buysM5 + sellsM5 > 0 ? ((buysM5 + sellsM5) / 5) * 60 : 0;
@@ -93,7 +95,8 @@ export class DexScreenerVolumeFetcher {
       const volumeContext: Partial<VolumeContext> = {
         volume1min,
         volume5minAvg,
-        buyTxLast60s: Math.max(buyTxLast60s, buysM5),
+        buyTxLast60s,
+        buyTxLast120s,
         sellTxLast20,
         buyTxLast20,
         volumeStillActive: volM5 > 0,

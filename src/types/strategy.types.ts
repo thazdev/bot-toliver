@@ -5,7 +5,7 @@ import type { Position, EnhancedPosition } from './position.types.js';
 
 export type StrategySignal = 'buy' | 'sell' | 'hold' | 'skip';
 export type StrategyTier = 'conservative' | 'balanced' | 'aggressive';
-export type EntryTriggerType = 'new_token_sniper' | 'pool_creation_sniper' | 'momentum_confirmation' | 'dip_reentry';
+export type EntryTriggerType = 'new_token_sniper' | 'pool_creation_sniper' | 'momentum_confirmation' | 'dip_reentry' | 'early_momentum';
 export type StopLossState = 'WATCHING' | 'SOFT_WARNING' | 'BREAK_EVEN_ACTIVE' | 'HARD_STOP' | 'EMERGENCY_EXIT';
 export type MarketRegime = 'bull' | 'bear' | 'choppy' | 'congested';
 
@@ -22,6 +22,7 @@ export interface VolumeContext {
   volume1min: number;
   volume5minAvg: number;
   buyTxLast60s: number;
+  buyTxLast120s?: number;
   sellTxLast20: number;
   buyTxLast20: number;
   volumeStillActive: boolean;
@@ -56,6 +57,10 @@ export interface SafetyData {
   buyTaxPercent: number;
   sellTaxPercent: number;
   bundleDetected: boolean;
+  /** Bundle launch detectado (≥4 wallets mesmo slot) — bloqueado antes do Signal Stack */
+  bundleLaunchDetected?: boolean;
+  /** Dev cluster detectado (≥3 holders mesma funding source) — bloqueado antes do Signal Stack */
+  devClusterDetected?: boolean;
   honeypotSimulationPassed: boolean;
 }
 
@@ -117,6 +122,7 @@ export interface StrategyContext {
   timestamp: number;
 
   tokenAgeSec: number;
+  poolAgeSec: number;
   priceChangeFromLaunch: number;
   priceChangePercent5min: number;
   priceStdDev30min: number;
@@ -163,6 +169,12 @@ export interface StrategyContext {
   winRateLast20: number;
   knownExploitActive: boolean;
   flashloanDetected: boolean;
+  /** Early Momentum Accumulation Score (0–100) — calculado após Signal Stack */
+  earlyMomentumScore?: number;
+  /** EMAS em tendência de alta (currentScore >= prevScore + 5) */
+  earlyMomentumTrendUp?: boolean;
+  /** Score EMAS anterior (para logging) */
+  earlyMomentumPrevScore?: number | null;
 }
 
 export interface EntryScoreBreakdown {

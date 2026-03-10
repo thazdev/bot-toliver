@@ -149,4 +149,45 @@ export class HolderVolumeFetcher {
       };
     }
   }
+
+  /**
+   * Retorna os endereços dos top N holders (ordenados por amount decrescente).
+   * Usado por DevClusterDetector para análise de insider funding.
+   */
+  async getTopHolderAddresses(mintAddress: string, limit: number = 10): Promise<string[]> {
+    try {
+      const body = {
+        jsonrpc: '2.0',
+        id: 'holder-addresses',
+        method: 'getTokenAccounts',
+        params: {
+          mint: mintAddress,
+          page: 1,
+          limit: 500,
+        },
+      };
+
+      const res = await fetch(this.heliusRpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = (await res.json()) as GetTokenAccountsResponse;
+      if (data.error) return [];
+
+      const accounts = data.result?.token_accounts ?? [];
+      const byOwner = new Map<string, number>();
+      for (const acc of accounts) {
+        const amt = acc.amount ?? 0;
+        const cur = byOwner.get(acc.owner) ?? 0;
+        byOwner.set(acc.owner, cur + amt);
+      }
+
+      const sorted = [...byOwner.entries()].sort((a, b) => b[1] - a[1]);
+      return sorted.slice(0, limit).map(([addr]) => addr);
+    } catch {
+      return [];
+    }
+  }
 }

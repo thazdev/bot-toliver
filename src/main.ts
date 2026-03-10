@@ -44,6 +44,7 @@ import { StrategyRegistry } from './strategies/StrategyRegistry.js';
 import { EntryStrategy } from './strategies/EntryStrategy.js';
 import { MomentumStrategy } from './strategies/MomentumStrategy.js';
 import { LaunchStrategy } from './strategies/LaunchStrategy.js';
+import { EarlyMomentumStrategy } from './strategies/EarlyMomentumStrategy.js';
 import { ExitManager } from './strategies/ExitManager.js';
 import { StopLossManager } from './strategies/StopLossManager.js';
 import { MultiStageProfitTaker } from './strategies/MultiStageProfitTaker.js';
@@ -64,6 +65,8 @@ import { LiquidityAnalyzer } from './analysis/LiquidityAnalyzer.js';
 import { HolderAnalyzer } from './analysis/HolderAnalyzer.js';
 import { HolderVolumeFetcher } from './services/HolderVolumeFetcher.js';
 import { DexScreenerVolumeFetcher } from './services/DexScreenerVolumeFetcher.js';
+import { InstitutionalRiskFilters } from './filters/InstitutionalRiskFilters.js';
+import { computeEarlyMomentumScore } from './services/EarlyMomentumScorer.js';
 import { HoneypotChecker } from './analysis/HoneypotChecker.js';
 import { SmartMoneyTracker } from './analysis/SmartMoneyTracker.js';
 import { WhaleMonitor } from './analysis/WhaleMonitor.js';
@@ -249,6 +252,7 @@ async function main(): Promise<void> {
   strategyRegistry.register(entryStrategy);
   strategyRegistry.register(momentumStrategy);
   strategyRegistry.register(launchStrategy);
+  strategyRegistry.register(new EarlyMomentumStrategy(tier));
 
   const exitManager = new ExitManager(tier);
   const stopLossManager = new StopLossManager(tier);
@@ -260,6 +264,7 @@ async function main(): Promise<void> {
   const holderAnalyzer = new HolderAnalyzer(tier);
   const holderVolumeFetcher = new HolderVolumeFetcher(config.solana.heliusRpcUrl);
   const dexScreenerVolumeFetcher = new DexScreenerVolumeFetcher();
+  const institutionalRiskFilters = new InstitutionalRiskFilters(holderVolumeFetcher);
   const honeypotChecker = new HoneypotChecker(tier);
   const smartMoneyTracker = new SmartMoneyTracker(tier);
   const whaleMonitor = new WhaleMonitor(tier);
@@ -373,6 +378,7 @@ async function main(): Promise<void> {
     });
 
     {
+        const poolAgeSec = (Date.now() - payload.detectedAt) / 1000;
         const tokenAgeSec = (Date.now() - tokenInfo.createdAt.getTime()) / 1000;
         const { holderData: fetchedHolderData, fromApi } = await holderVolumeFetcher.fetchHolderData(tokenInfo.mintAddress);
         const holderData: HolderData = fromApi ? fetchedHolderData : {
@@ -384,10 +390,57 @@ async function main(): Promise<void> {
         };
         const buyTxHeuristic = fromApi && holderData.holderCount >= 1 ? holderData.holderCount : 0;
         const { volumeContext: dexVolume } = await dexScreenerVolumeFetcher.fetchVolume(tokenInfo.mintAddress);
+        // Para o gate: usar apenas dados do DexScreener (txns reais). Fallback = 0 evita passar tokens sem swap.
+        const buyTxLast60sGate = dexVolume.buyTxLast60s ?? 0;
+        const buyTxLast120sGate = dexVolume.buyTxLast120s ?? 0;
+        const buyTxLast60s = dexVolume.buyTxLast60s ?? buyTxHeuristic;
+        const buyTxLast120s = dexVolume.buyTxLast120s ?? Math.round((dexVolume.buyTxLast20 ?? buyTxHeuristic) * 2 / 5);
+
+        // Gate de swap activity: só analisar quando houver primeira atividade de swaps (dados DexScreener)
+        const deferCount = payload.deferCount ?? 0;
+        const hasSwapActivity = buyTxLast60sGate >= 1 || buyTxLast120sGate >= 3;
+        if (!hasSwapActivity && deferCount < 2) {
+          const deferredPayload: TokenScanJobPayload = {
+            ...payload,
+            deferCount: deferCount + 1,
+          };
+          await queueManager.addJob(QueueName.TOKEN_SCAN, 'pool-created-defer', deferredPayload as unknown as Record<string, unknown>, { delay: 60_000 });
+          logger.debug('TOKEN_SCAN: defer por ausência de swap activity', {
+            mint: tokenInfo.mintAddress.slice(0, 12),
+            buyTx60s: buyTxLast60sGate,
+            buyTx120s: buyTxLast120sGate,
+            deferCount: deferCount + 1,
+          });
+          return;
+        }
+        if (!hasSwapActivity && deferCount >= 2) {
+          logger.debug('TOKEN_SCAN: ignorado após 2 defers — sem swap activity', {
+            mint: tokenInfo.mintAddress.slice(0, 12),
+          });
+          return;
+        }
+
+        // Filtros institucionais (Bundle Launch + Dev Cluster) — antes do Signal Stack
+        const instRiskResult = await institutionalRiskFilters.run(
+          pool,
+          tokenInfo.mintAddress,
+          poolAgeSec,
+        );
+        if (!instRiskResult.passed) {
+          logger.debug('TOKEN_SCAN: bloqueado por filtro institucional', {
+            mint: tokenInfo.mintAddress.slice(0, 12),
+            reason: instRiskResult.reason,
+            bundleLaunch: instRiskResult.bundleLaunchDetected,
+            devCluster: instRiskResult.devClusterDetected,
+          });
+          return;
+        }
+
         const defaultVolumeContext: VolumeContext = {
           volume1min: dexVolume.volume1min ?? 0,
           volume5minAvg: dexVolume.volume5minAvg ?? 0,
-          buyTxLast60s: dexVolume.buyTxLast60s ?? buyTxHeuristic,
+          buyTxLast60s,
+          buyTxLast120s,
           sellTxLast20: dexVolume.sellTxLast20 ?? 0,
           buyTxLast20: dexVolume.buyTxLast20 ?? buyTxHeuristic,
           volumeStillActive: dexVolume.volumeStillActive ?? false,
@@ -421,6 +474,8 @@ async function main(): Promise<void> {
           buyTaxPercent: 0,
           sellTaxPercent: 0,
           bundleDetected: false,
+          bundleLaunchDetected: false,
+          devClusterDetected: false,
           honeypotSimulationPassed: true,
         };
         const defaultSmartMoneyData: SmartMoneyData = {
@@ -470,6 +525,7 @@ async function main(): Promise<void> {
           volume: pool.volume24h,
           timestamp: Date.now(),
           tokenAgeSec,
+          poolAgeSec,
           priceChangeFromLaunch: tokenInfo.initialPrice > 0
             ? ((pool.price - tokenInfo.initialPrice) / tokenInfo.initialPrice) * 100
             : 0,
@@ -514,6 +570,40 @@ async function main(): Promise<void> {
           knownExploitActive: false,
           flashloanDetected: false,
         };
+
+        // Signal Stack — antes de EMAS e TradeFilterPipeline
+        const signalStackResult = EntryStrategy.runSignalStackCheck(context, tier);
+        if (!signalStackResult.passed) {
+          logger.debug('TOKEN_SCAN: Signal Stack falhou', {
+            mint: tokenInfo.mintAddress.slice(0, 12),
+            failedConditions: signalStackResult.failedConditions,
+          });
+          return;
+        }
+
+        // Early Momentum Scoring (após Signal Stack)
+        const emasBreakdown = computeEarlyMomentumScore(context);
+        const currentScore = emasBreakdown.totalScore;
+        context.earlyMomentumScore = currentScore;
+
+        let trendUp = false;
+        let prevScore: number | null = null;
+        try {
+          const redis = RedisClient.getInstance().getClient();
+          await redis.incr('diag:emas_evaluated');
+          const trendKey = `emas:last_score:${tokenInfo.mintAddress}`;
+          const prevScoreRaw = await redis.get(trendKey);
+          prevScore = prevScoreRaw ? parseFloat(prevScoreRaw) : null;
+          trendUp = prevScore !== null && currentScore >= prevScore + 5;
+          if (trendUp) {
+            await redis.incr('diag:emas_trend_confirmed');
+          }
+          await redis.set(trendKey, String(currentScore), 'EX', 600);
+        } catch {
+          // Non-critical
+        }
+        context.earlyMomentumTrendUp = trendUp;
+        context.earlyMomentumPrevScore = prevScore;
 
         const filterOutcome = await tradeFilterPipeline.runPipeline(context);
         if (!filterOutcome.passed) {
@@ -645,6 +735,14 @@ async function main(): Promise<void> {
         }
 
         if (buySignal && buySignal.confidence > 0) {
+          if (buySignal.triggerType === 'early_momentum') {
+            try {
+              const redis = RedisClient.getInstance().getClient();
+              await redis.incr('diag:emas_triggered');
+            } catch {
+              // Non-critical
+            }
+          }
           if (await areBuysPaused()) {
             logger.debug('TOKEN_SCAN: compras pausadas pelo dashboard — ignorando sinal de compra', {
               tokenMint: tokenMint.slice(0, 12),
@@ -660,7 +758,12 @@ async function main(): Promise<void> {
           }
 
           const sizeSol = positionSizer.calculatePositionSize(buySignal.confidence);
-          const baseSize = sizeSol > 0 ? sizeSol : buySignal.suggestedSizeSol;
+          const baseSize =
+            buySignal.triggerType === 'early_momentum'
+              ? buySignal.suggestedSizeSol
+              : sizeSol > 0
+                ? sizeSol
+                : buySignal.suggestedSizeSol;
           const finalSize = baseSize * guardStatus.positionSizeMultiplier;
           const minSize = getTierConfig(config.trading.strategyTier).sizing.minPositionSol;
 

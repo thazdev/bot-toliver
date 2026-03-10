@@ -56,15 +56,17 @@ export class QueueManager {
    * @param queueName - Target queue name
    * @param jobName - Name for the job
    * @param data - Job payload data
+   * @param options - Optional: delay in ms for deferred execution
    * @returns The created job
    */
   async addJob<T extends Record<string, unknown>>(
     queueName: QueueName,
     jobName: string,
     data: T,
+    options?: { delay?: number },
   ): Promise<void> {
     const queue = this.getQueue(queueName);
-    await queue.add(jobName, data);
+    await queue.add(jobName, data, options);
     // Log removido: "Job added to queue" gerava excesso de logs
   }
 

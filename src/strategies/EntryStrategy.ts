@@ -89,10 +89,27 @@ export class EntryStrategy extends BaseStrategy {
   }
 
   /**
+   * Executa Signal Stack check — usado no pipeline antes de EMAS e TradeFilterPipeline.
+   */
+  static runSignalStackCheck(
+    ctx: StrategyContext,
+    tier: StrategyTier,
+  ): { passed: boolean; failedConditions: string[] } {
+    const cfg = getTierConfig(tier).entry;
+    return EntryStrategy.runSignalStackCheckInternal(ctx, cfg);
+  }
+
+  /**
    * Retorna { passed, failedConditions } para debug — condições falhadas aparecem em skipReasons.
    */
   private checkSignalStack(ctx: StrategyContext): { passed: boolean; failedConditions: string[] } {
-    const cfg = this.tierConfig.entry;
+    return EntryStrategy.runSignalStackCheckInternal(ctx, this.tierConfig.entry);
+  }
+
+  private static runSignalStackCheckInternal(
+    ctx: StrategyContext,
+    cfg: import('./config.js').EntryConfig,
+  ): { passed: boolean; failedConditions: string[] } {
     const tokenMint = ctx.tokenInfo.mintAddress.slice(0, 12);
     const failed: string[] = [];
 
@@ -100,8 +117,8 @@ export class EntryStrategy extends BaseStrategy {
       tokenMint,
       liquidity: ctx.liquidity,
       minLiq: cfg.minLiquiditySol,
-      tokenAgeSec: ctx.tokenAgeSec,
-      minTokenAgeSec: cfg.minTokenAgeSec,
+      poolAgeSec: ctx.poolAgeSec,
+      minPoolAgeSec: cfg.minPoolAgeSec,
       holderCount: ctx.holderData.holderCount,
       minHolderCount: cfg.minHolderCount,
       topHolderPct: ctx.holderData.topHolderPercent.toFixed(1),
@@ -113,14 +130,16 @@ export class EntryStrategy extends BaseStrategy {
       mintAuthDisabled: ctx.safetyData.mintAuthorityDisabled,
       freezeAbsent: ctx.safetyData.freezeAuthorityAbsent,
       buyTxLast60s: ctx.volumeContext.buyTxLast60s,
-      minBuys: cfg.minBuyTxLast60s,
+      buyTxLast120s: ctx.volumeContext.buyTxLast120s ?? 0,
+      minBuys60s: cfg.minBuyTxLast60s,
+      minBuys120s: cfg.minBuyTxLast120s,
       isBlacklisted: ctx.safetyData.isBlacklisted,
       rugScore: ctx.safetyData.rugScore,
       minRugScore: cfg.minRugScoreSignal,
     });
 
-    if (ctx.tokenAgeSec < cfg.minTokenAgeSec) {
-      failed.push(`token_age_too_low(${ctx.tokenAgeSec.toFixed(0)}s<${cfg.minTokenAgeSec}s)`);
+    if (ctx.poolAgeSec < cfg.minPoolAgeSec) {
+      failed.push(`pool_age_too_low(${ctx.poolAgeSec.toFixed(0)}s<${cfg.minPoolAgeSec}s)`);
     }
     if (ctx.liquidity < cfg.minLiquiditySol) {
       failed.push(`liquidity_below_threshold(${ctx.liquidity.toFixed(1)}<${cfg.minLiquiditySol}SOL)`);
@@ -144,8 +163,11 @@ export class EntryStrategy extends BaseStrategy {
     if (!ctx.safetyData.freezeAuthorityAbsent) {
       failed.push('freeze_authority_set');
     }
-    if (ctx.volumeContext.buyTxLast60s < cfg.minBuyTxLast60s) {
-      failed.push(`buy_tx_too_low(${ctx.volumeContext.buyTxLast60s}<${cfg.minBuyTxLast60s})`);
+    const buyTx60s = ctx.volumeContext.buyTxLast60s;
+    const buyTx120s = ctx.volumeContext.buyTxLast120s ?? Math.round((ctx.volumeContext.buyTxLast20 * 2) / 5);
+    const hasBuyActivity = buyTx60s >= cfg.minBuyTxLast60s || buyTx120s >= cfg.minBuyTxLast120s;
+    if (!hasBuyActivity) {
+      failed.push(`buy_tx_too_low(60s=${buyTx60s}<${cfg.minBuyTxLast60s}, 120s=${buyTx120s}<${cfg.minBuyTxLast120s})`);
     }
     if (ctx.safetyData.isBlacklisted) {
       failed.push('token_blacklisted');
@@ -282,8 +304,9 @@ export class EntryStrategy extends BaseStrategy {
 
   private determineTriggerType(ctx: StrategyContext): EntryTriggerType | null {
     // Type A (new_token_sniper) DISABLED — extreme rug pull probability on tokens < 60s
+    // Usa pool_age como critério de maturidade (não token_age)
 
-    if (ctx.tokenAgeSec >= 120 && ctx.tokenAgeSec <= 600 && ctx.poolInitialSol >= this.tierConfig.entry.minLiquiditySol) {
+    if (ctx.poolAgeSec >= 120 && ctx.poolAgeSec <= 600 && ctx.poolInitialSol >= this.tierConfig.entry.minLiquiditySol) {
       return 'pool_creation_sniper';
     }
 
@@ -291,7 +314,7 @@ export class EntryStrategy extends BaseStrategy {
       return 'dip_reentry';
     }
 
-    if (ctx.tokenAgeSec >= 180 && ctx.tokenAgeSec <= 1800) {
+    if (ctx.poolAgeSec >= 180 && ctx.poolAgeSec <= 1800) {
       return 'momentum_confirmation';
     }
 
@@ -311,12 +334,14 @@ export class EntryStrategy extends BaseStrategy {
         return this.evaluateTypeC(ctx);
       case 'dip_reentry':
         return this.evaluateTypeD(ctx);
+      case 'early_momentum':
+        return { pass: false, reason: 'Early momentum handled by EarlyMomentumStrategy' };
     }
   }
 
   private evaluateTypeA(ctx: StrategyContext): { pass: boolean; reason: string } {
-    if (ctx.tokenAgeSec >= 60) {
-      return { pass: false, reason: 'Token age >= 60s for sniper mode' };
+    if (ctx.poolAgeSec >= 60) {
+      return { pass: false, reason: 'Pool age >= 60s for sniper mode' };
     }
     if (ctx.liquidity <= 0) {
       return { pass: false, reason: 'No liquidity added yet' };

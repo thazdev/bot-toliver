@@ -16,6 +16,8 @@ export interface TokenScanJobPayload {
   txSignature?: string;
   /** Quando true, o worker resolve o mint via getParsedTransaction antes de processar */
   needsResolution?: boolean;
+  /** Contador de deferrals (gate de swap activity) — max 2 */
+  deferCount?: number;
 }
 
 export interface TradeExecuteJobPayload {

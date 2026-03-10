@@ -1,8 +1,8 @@
 # Estratégias de Compra de Memecoins — Bot Toliver
 
-> Documento atualizado em 2026-03-09 — Overhaul de redução de risco.
+> Documento atualizado em 2026-03-09 — Overhaul de redução de risco + arquitetura baseada em eventos.
 >
-> Principais mudanças: Type A (New Token Sniper) **desabilitado**, Phase 1 (Ignition Sniper) **desabilitada**, filtros globais muito mais rigorosos, limites de posição e overtrading adicionados.
+> Principais mudanças: Type A (New Token Sniper) **desabilitado**, Phase 1 (Ignition Sniper) **desabilitada**, filtros globais rigorosos. **Novo:** Scanner baseado em eventos de liquidez (pool + liq >3 SOL + swap activity), **pool_age** substitui token_age como critério de maturidade (≥90s), cálculo correto de buy_tx (60s/120s).
 
 O bot possui **18 estratégias de compra ativas** (2 desabilitadas) distribuídas em 4 módulos: `EntryStrategy`, `LaunchStrategy`, `MomentumStrategy`, `SmartMoneyTracker`, `WhaleMonitor` e `TradeFilterPipeline`. Cada uma opera com 3 tiers de risco: **Conservative**, **Balanced** e **Aggressive**.
 
@@ -35,6 +35,18 @@ O bot possui **18 estratégias de compra ativas** (2 desabilitadas) distribuída
 
 ---
 
+## Scanner Baseado em Eventos de Liquidez
+
+O bot **não** inicia análise apenas com criação de token. A análise começa quando:
+
+1. **Criação de pool** (Raydium ou DEX suportado)
+2. **Adição de liquidez significativa** (>3 SOL — `MIN_LIQUIDITY_SOL`)
+3. **Primeira atividade de swaps detectada** (gate no pipeline)
+
+Tokens sem liquidez são ignorados imediatamente. Tokens sem swap activity são **deferidos** (re-enfileirados em 60s) até 2 vezes; após isso, ignorados.
+
+---
+
 ## Pré-requisitos Globais (Signal Stack)
 
 Antes de qualquer estratégia de entrada ser avaliada, o token precisa passar por estas condições mínimas:
@@ -46,12 +58,37 @@ Antes de qualquer estratégia de entrada ser avaliada, o token precisa passar po
 | Top holder máx.              | ≤ 12%     | ≤ 12%    | ≤ 12%        |
 | Top 5 holders máx.           | ≤ 35%     | ≤ 35%    | ≤ 35%        |
 | Top 10 holders máx.          | ≤ 50%     | ≤ 50%    | ≤ 50%        |
-| Buy TX nos últimos 60s       | ≥ 3       | ≥ 3      | ≥ 3          |
-| Token age mínimo             | ≥ 120s    | ≥ 120s   | ≥ 120s       |
+| Buy TX (atividade recente)   | ≥ 1 (60s) ou ≥ 3 (120s) | idem | idem |
+| **Pool age** mínimo          | ≥ 90s     | ≥ 90s    | ≥ 90s        |
 | Rug score mínimo             | ≥ 70      | ≥ 70     | ≥ 70         |
 | Freeze authority ausente     | Sim       | Sim      | Sim          |
 | Mint authority desabilitada  | Sim       | Sim      | Sim          |
 | Token não blacklistado       | Sim       | Sim      | Sim          |
+
+**Nota:** `pool_age` = tempo desde criação da pool (não token_age). Buy TX: `buy_tx_60s = txns.m5.buys/5`, `buy_tx_120s = txns.m5.buys*2/5` (DexScreener).
+
+### Filtros Institucionais de Risco (antes do Signal Stack)
+
+Executados apenas quando **pool_age ≥ 30s** para evitar falsos positivos.
+
+**Bundle Launch Detection:**
+- Captura até os primeiros 15 swaps após criação da pool (wallet, slot, blockTime).
+- Heurísticas (dispara se QUALQUER for verdadeira):
+  - ≥4 wallets em janela temporal de 2 segundos → bundle cluster
+  - ≥4 wallets no mesmo slot ou ±1 slot → bundle launch
+  - ≥5 dos primeiros 10 compradores no mesmo bloco → insider launch
+- Short-circuit: para análise imediatamente após encontrar cluster.
+- Métrica Redis: `diag:bundle_skipped`.
+
+**Dev Wallet Cluster Detection:**
+- Obtém top 10 holders e busca transação de funding inicial (primeiro inbound SOL).
+- Filtro hot wallet: funding wallet com >1000 txs é ignorada (CEX).
+- Funding chains (1-hop): mapeia holder → fundingWallet → fundingWalletParent; grupos por fundingWallet ou fundingWalletParent.
+- Heurísticas: ≥3 holders no mesmo grupo → dev cluster; ≥4 holders no mesmo bloco ou ±3 slots → dev cluster.
+- Cache: funding source (120s), txCount (300s).
+- Métrica Redis: `diag:dev_cluster_skipped`.
+
+**Métrica agregada:** `diag:institutional_filtered` — incrementada quando qualquer filtro dispara.
 
 ### Anti-FOMO Gate
 
@@ -79,10 +116,10 @@ Tokens com menos de 60 segundos possuem probabilidade extremamente alta de rug p
 
 **Arquivo:** `EntryStrategy.ts` → `evaluateTypeB()`
 
-**Quando ativa:** Token com idade entre **120s e 600s** com pool confirmada.
+**Quando ativa:** Pool com idade entre **120s e 600s** confirmada.
 
 **Condições:**
-- Token age: 120s – 600s
+- Pool age: 120s – 600s
 - Pool initial SOL ≥ 5 SOL
 - Holder count ≥ 10
 - Top holder ≤ 12%
@@ -98,10 +135,10 @@ Tokens com menos de 60 segundos possuem probabilidade extremamente alta de rug p
 
 **Arquivo:** `EntryStrategy.ts` → `evaluateTypeC()`
 
-**Quando ativa:** Token entre **180s e 1800s** de idade com sinais de momentum.
+**Quando ativa:** Pool entre **180s e 1800s** de idade com sinais de momentum.
 
 **Condições:**
-- Token age: 180s – 1800s
+- Pool age: 180s – 1800s
 - Volume ratio (1min / 5min avg) ≥ 2.5x
 - Variação de preço em 5min: 8% – 80%
 - Crescimento de holders ≥ 2/min
@@ -387,25 +424,39 @@ Tokens na fase Ignition (0–300s) possuem risco extremo de rug pull. Esta fase 
 | Hard Stop Loss           | 10%          | 12%      | 15%        |
 | Max Posições Simultâneas | 1            | 2        | 3          |
 | Max Perda Diária         | 5%           | 8%       | 12%        |
-| Min Token Age            | 120s         | 120s     | 120s       |
+| Min Pool Age             | 90s          | 90s      | 90s        |
 | Min Rug Score            | 70           | 70       | 70         |
-| Min Buy TX (60s)         | 3            | 3        | 3          |
+| Min Buy TX               | ≥1 (60s) ou ≥3 (120s) | idem | idem |
 
 ---
 
 ## Fluxo Completo de Decisão de Compra
 
 ```
-Token Detectado
+Pool criada + liquidez >3 SOL
     │
     ▼
+Gate de swap activity (DexScreener)
+  ├── buy_tx_60s ≥ 1 OU buy_tx_120s ≥ 3?
+  │   └── NÃO → Defer 60s (max 2x) ou Skip
+    ▼ SIM
+Bundle Launch Detection (pool_age ≥ 30s, até 15 swaps)
+  ├── ≥4 wallets em janela de 2s? → Skip (bundle_skipped)
+  ├── ≥4 wallets mesmo slot ou ±1 slot? → Skip
+  ├── ≥5 dos primeiros 10 no mesmo bloco? → Skip (insider launch)
+    ▼ PASS
+Dev Wallet Cluster Detection (pool_age ≥ 30s)
+  ├── Hot wallet (>1000 txs)? → ignora funding source
+  ├── ≥3 holders no mesmo grupo (funding chain 1-hop)? → Skip (dev_cluster_skipped)
+  ├── ≥4 holders no mesmo bloco ou ±3 slots? → Skip
+    ▼ PASS
 Signal Stack (pré-condições globais)
-  ├── Token age ≥ 120s?
+  ├── Pool age ≥ 90s?
   ├── Liquidez ≥ mínimo tier?
   ├── Holders ≥ mínimo tier?
   ├── Top holder ≤ 12%?
   ├── Top 5 holders ≤ 35%?
-  ├── Buy TX ≥ 3 (60s)?
+  ├── Buy TX ≥ 1 (60s) ou ≥ 3 (120s)?
   ├── Rug score ≥ 70?
   ├── Freeze authority ausente?
   └── Mint authority desabilitada?
@@ -451,7 +502,7 @@ O score final (0–100) que determina se um token é comprado:
 |-----------------|:----:|---------------------------------------------------|
 | Liquidez        | 25%  | 0–100 baseado em SOL na pool (0→0, 50+→100)       |
 | Holders         | 20%  | Contagem + penalidade por concentração + growth    |
-| Momentum        | 20%  | Volume ratio + price change 5min + buy TX/60s      |
+| Momentum        | 20%  | Volume ratio + price change 5min + buy TX (60s/120s corretos) |
 | Segurança       | 25%  | Rug score + penalidades (mint/freeze/blacklist/dev) |
 | Smart Money     | 10%  | Score das carteiras inteligentes no token           |
 
@@ -467,8 +518,8 @@ O score final (0–100) que determina se um token é comprado:
 | Holders min (Aggr.)     | 3                        | 10                              |
 | Top holder máx.         | 100% (Aggr.)            | 12% (todos)                    |
 | Top 5 holders máx.      | 100% (Aggr.)            | 35% (todos)                    |
-| Token age mínimo        | 0s                       | 120s                            |
-| Min buy TX (60s)        | 1                        | 3                               |
+| Maturidade (Signal Stack) | token_age 0s         | **pool_age ≥ 90s**              |
+| Min buy TX               | 1 (60s)                | ≥1 (60s) OU ≥3 (120s) — cálculo correto |
 | Anti-FOMO (Aggr.)       | 1000%                    | 200%                            |
 | Hard stop (Aggr.)       | 25%                      | 15%                             |
 | Hard stop (Balanced)    | 20%                      | 12%                             |
@@ -487,3 +538,4 @@ O score final (0–100) que determina se um token é comprado:
 | Pump.fun near-grad      | mcap 50-69K              | mcap 55-69K + 20 buyers/10min  |
 | Phase 2 holders         | ≥ 20                     | ≥ 25                            |
 | Phase 3 volume          | ≥ 1.5x                   | ≥ 1.8x + ratio + growth + liq  |
+| Scanner                 | Criação de token         | **Eventos: pool + liq >3 SOL + swap** |

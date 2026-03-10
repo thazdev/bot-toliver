@@ -14,6 +14,8 @@ export interface EntryConfig {
   slippageTolerancePercent: number;
   maxPriceGainFromLaunch: number;
   minBuyTxLast60s: number;
+  minBuyTxLast120s: number;
+  minPoolAgeSec: number;
   minTokenAgeSec: number;
   minRugScoreSignal: number;
 }
@@ -427,7 +429,9 @@ const CONSERVATIVE: TierConfig = {
     solSizeMax: 0.03,
     slippageTolerancePercent: 3,
     maxPriceGainFromLaunch: 120,
-    minBuyTxLast60s: 3,
+    minBuyTxLast60s: 1,
+    minBuyTxLast120s: 3,
+    minPoolAgeSec: 90,
     minTokenAgeSec: 120,
     minRugScoreSignal: 70,
   },
@@ -530,7 +534,9 @@ const BALANCED: TierConfig = {
     solSizeMax: 0.5,
     slippageTolerancePercent: 7,
     maxPriceGainFromLaunch: 150,
-    minBuyTxLast60s: 3,
+    minBuyTxLast60s: 1,
+    minBuyTxLast120s: 3,
+    minPoolAgeSec: 90,
     minTokenAgeSec: 120,
     minRugScoreSignal: 70,
   },
@@ -633,7 +639,9 @@ const AGGRESSIVE: TierConfig = {
     solSizeMax: 1.0,
     slippageTolerancePercent: 15,
     maxPriceGainFromLaunch: 200,
-    minBuyTxLast60s: 3,
+    minBuyTxLast60s: 1,
+    minBuyTxLast120s: 3,
+    minPoolAgeSec: 90,
     minTokenAgeSec: 120,
     minRugScoreSignal: 70,
   },

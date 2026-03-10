@@ -34,10 +34,16 @@
 
 ### Filtros de Sinal
 - MIN_LIQUIDITY_SOL — gate no listener (LogsListener): decide se o token ENTRA no pipeline.
-  Default: 2 SOL. Filtra tokens com pool muito rasa antes de qualquer processamento.
+  Default: 3 SOL. Filtra tokens com pool muito rasa antes de qualquer processamento.
+  Scanner baseado em eventos: pool creation + liquidez >3 SOL + gate de swap activity (defer até swap detectado).
 - MIN_LIQUIDITY_FOR_SIGNAL — gate na estratégia (EntryStrategy): decide se gera SINAL DE COMPRA.
   Default: 1 SOL. Tokens com liquidez abaixo deste valor passam no pipeline mas não geram compra.
   **São variáveis diferentes**: uma filtra na entrada, outra filtra na decisão de trade.
+
+### Signal Stack (EntryStrategy)
+- pool_age ≥ 90s (minPoolAgeSec) — critério de maturidade (substitui token_age)
+- buy_tx_60s = txns.m5.buys/5; buy_tx_120s = txns.m5.buys*2/5 — métrica correta de atividade
+- Gate de swap: buyTxLast60s ≥ 1 OU buyTxLast120s ≥ 3 (dados DexScreener)
 
 ### Bot
 - LOG_LEVEL (default: warn)
