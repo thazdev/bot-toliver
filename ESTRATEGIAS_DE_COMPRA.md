@@ -1,6 +1,6 @@
 # Estratégias de Compra de Memecoins — Bot Toliver
 
-> Documento atualizado em 2026-03-10 — Calibração dos filtros Signal Stack para memecoins reais.
+> Documento atualizado em 2026-03-10 — Calibração dos filtros Signal Stack para memecoins reais
 >
 > Principais mudanças: Signal Stack relaxado (liquidez, holders, concentração, pool age) para valores realistas de memecoins Solana. Adicionados contadores Redis `diag:signal_stack_*` para visibilidade. Fallback de holderData usa estimativas conservadoras em vez de zeros. Type A e Phase 1 continuam **desabilitados**.
 
