@@ -39,10 +39,27 @@ export class PoolScanner {
       const dex = this.dexClients.find((d) => (d as { name: string }).name.toLowerCase().includes(knownPool.dex));
       if (dex) {
         try {
-          const pool = await dex.getPoolByAddress(knownPool.poolAddress);
+          let pool = await dex.getPoolByAddress(knownPool.poolAddress);
+          // Pump.fun bonding curve drenada (complete) = token graduou para Raydium — fallback
+          if (pool && pool.dex === 'pumpfun' && pool.liquidity <= 0) {
+            logger.debug('PoolScanner: pump.fun pool drained (graduated?) — trying Raydium fallback', {
+              mintAddress: mintAddress.slice(0, 12),
+            });
+            const raydiumDex = this.dexClients.find((d) => (d as { name: string }).name.toLowerCase().includes('raydium'));
+            if (raydiumDex) {
+              const raydiumPool = await raydiumDex.getPool(mintAddress);
+              if (raydiumPool && raydiumPool.liquidity > 0) {
+                pool = raydiumPool;
+                logger.debug('PoolScanner: Raydium pool found for graduated token', {
+                  mintAddress: mintAddress.slice(0, 12),
+                  liquidity: pool.liquidity.toFixed(2),
+                });
+              }
+            }
+          }
           if (pool) {
             await this.cacheService.set(cacheKey, pool, POOL_CACHE_TTL_SECONDS);
-            logger.debug('PoolScanner: pool from logs (getAccountInfo)', { mintAddress, dex: knownPool.dex });
+            logger.debug('PoolScanner: pool from logs (getAccountInfo)', { mintAddress, dex: pool.dex });
             return pool;
           }
         } catch {}
@@ -64,6 +81,21 @@ export class PoolScanner {
       try {
         const pool = await dex.getPool(mintAddress);
         if (pool) {
+          // Pump.fun com liquidez 0 = token graduou — tentar Raydium
+          if (pool.dex === 'pumpfun' && pool.liquidity <= 0) {
+            const raydiumDex = this.dexClients.find((d) => (d as { name: string }).name.toLowerCase().includes('raydium'));
+            if (raydiumDex) {
+              const raydiumPool = await raydiumDex.getPool(mintAddress);
+              if (raydiumPool && raydiumPool.liquidity > 0) {
+                await this.cacheService.set(cacheKey, raydiumPool, POOL_CACHE_TTL_SECONDS);
+                logger.debug('PoolScanner: Raydium fallback for graduated pump.fun', {
+                  mintAddress: mintAddress.slice(0, 12),
+                  liquidity: raydiumPool.liquidity.toFixed(2),
+                });
+                return raydiumPool;
+              }
+            }
+          }
           await this.cacheService.set(cacheKey, pool, POOL_CACHE_TTL_SECONDS);
           logger.debug('PoolScanner: pool found', {
             mintAddress,

@@ -63,6 +63,7 @@ import { ScamDetector } from './analysis/ScamDetector.js';
 import { LiquidityAnalyzer } from './analysis/LiquidityAnalyzer.js';
 import { HolderAnalyzer } from './analysis/HolderAnalyzer.js';
 import { HolderVolumeFetcher } from './services/HolderVolumeFetcher.js';
+import { DexScreenerVolumeFetcher } from './services/DexScreenerVolumeFetcher.js';
 import { HoneypotChecker } from './analysis/HoneypotChecker.js';
 import { SmartMoneyTracker } from './analysis/SmartMoneyTracker.js';
 import { WhaleMonitor } from './analysis/WhaleMonitor.js';
@@ -258,6 +259,7 @@ async function main(): Promise<void> {
   const liquidityAnalyzer = new LiquidityAnalyzer(tier);
   const holderAnalyzer = new HolderAnalyzer(tier);
   const holderVolumeFetcher = new HolderVolumeFetcher(config.solana.heliusRpcUrl);
+  const dexScreenerVolumeFetcher = new DexScreenerVolumeFetcher();
   const honeypotChecker = new HoneypotChecker(tier);
   const smartMoneyTracker = new SmartMoneyTracker(tier);
   const whaleMonitor = new WhaleMonitor(tier);
@@ -381,24 +383,25 @@ async function main(): Promise<void> {
           holdersDecreasing: false,
         };
         const buyTxHeuristic = fromApi && holderData.holderCount >= 1 ? holderData.holderCount : 0;
+        const { volumeContext: dexVolume } = await dexScreenerVolumeFetcher.fetchVolume(tokenInfo.mintAddress);
         const defaultVolumeContext: VolumeContext = {
-          volume1min: 0,
-          volume5minAvg: 0,
-          buyTxLast60s: buyTxHeuristic,
-          sellTxLast20: 0,
-          buyTxLast20: buyTxHeuristic,
-          volumeStillActive: false,
-          sellVolumeRatio: 0,
-          largestSellPercent: 0,
-          volumePrev60s: 0,
-          txnsPerMinute: 0,
-          uniqueWalletsPerVolume: 0,
-          avgTradeSize: 0,
-          tradeSizeStdDev: 0,
-          buyRatio: 0.5,
-          tradeTimeDistributionScore: 0,
-          selfTradingDetected: false,
-          volumeDropPercent60s: 0,
+          volume1min: dexVolume.volume1min ?? 0,
+          volume5minAvg: dexVolume.volume5minAvg ?? 0,
+          buyTxLast60s: dexVolume.buyTxLast60s ?? buyTxHeuristic,
+          sellTxLast20: dexVolume.sellTxLast20 ?? 0,
+          buyTxLast20: dexVolume.buyTxLast20 ?? buyTxHeuristic,
+          volumeStillActive: dexVolume.volumeStillActive ?? false,
+          sellVolumeRatio: dexVolume.sellVolumeRatio ?? 0,
+          largestSellPercent: dexVolume.largestSellPercent ?? 0,
+          volumePrev60s: dexVolume.volumePrev60s ?? 0,
+          txnsPerMinute: dexVolume.txnsPerMinute ?? 0,
+          uniqueWalletsPerVolume: dexVolume.uniqueWalletsPerVolume ?? 0,
+          avgTradeSize: dexVolume.avgTradeSize ?? 0,
+          tradeSizeStdDev: dexVolume.tradeSizeStdDev ?? 0,
+          buyRatio: dexVolume.buyRatio ?? 0.5,
+          tradeTimeDistributionScore: dexVolume.tradeTimeDistributionScore ?? 0,
+          selfTradingDetected: dexVolume.selfTradingDetected ?? false,
+          volumeDropPercent60s: dexVolume.volumeDropPercent60s ?? 0,
         };
         const defaultSafetyData: SafetyData = {
           mintAuthorityDisabled: !tokenInfo.hasMintAuthority,

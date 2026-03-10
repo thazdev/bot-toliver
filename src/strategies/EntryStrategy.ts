@@ -32,8 +32,10 @@ export class EntryStrategy extends BaseStrategy {
       suggestedSizeSol: 0,
     });
 
-    if (!this.passesSignalStack(context)) {
-      return skip('Failed signal stack pre-conditions');
+    const signalStackResult = this.checkSignalStack(context);
+    if (!signalStackResult.passed) {
+      const failReasons = signalStackResult.failedConditions.join(', ');
+      return skip(`Failed signal stack pre-conditions: [${failReasons}]`);
     }
 
     if (this.isAntifomoTriggered(context)) {
@@ -86,9 +88,13 @@ export class EntryStrategy extends BaseStrategy {
     };
   }
 
-  private passesSignalStack(ctx: StrategyContext): boolean {
+  /**
+   * Retorna { passed, failedConditions } para debug — condições falhadas aparecem em skipReasons.
+   */
+  private checkSignalStack(ctx: StrategyContext): { passed: boolean; failedConditions: string[] } {
     const cfg = this.tierConfig.entry;
     const tokenMint = ctx.tokenInfo.mintAddress.slice(0, 12);
+    const failed: string[] = [];
 
     logger.debug('SIGNAL_STACK_CHECK', {
       tokenMint,
@@ -114,118 +120,46 @@ export class EntryStrategy extends BaseStrategy {
     });
 
     if (ctx.tokenAgeSec < cfg.minTokenAgeSec) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'tokenAge',
-        value: ctx.tokenAgeSec,
-        required: cfg.minTokenAgeSec,
-      });
-      return false;
+      failed.push(`token_age_too_low(${ctx.tokenAgeSec.toFixed(0)}s<${cfg.minTokenAgeSec}s)`);
     }
-
     if (ctx.liquidity < cfg.minLiquiditySol) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'liquidity',
-        value: ctx.liquidity,
-        required: cfg.minLiquiditySol,
-      });
-      return false;
+      failed.push(`liquidity_below_threshold(${ctx.liquidity.toFixed(1)}<${cfg.minLiquiditySol}SOL)`);
     }
-
     if (ctx.holderData.holderCount < cfg.minHolderCount) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'holderCount',
-        value: ctx.holderData.holderCount,
-        required: cfg.minHolderCount,
-      });
-      return false;
+      failed.push(`holder_count_too_low(${ctx.holderData.holderCount}<${cfg.minHolderCount})`);
     }
-
     if (ctx.holderData.topHolderPercent > cfg.maxTopHolderPercent) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'topHolderPercent',
-        value: ctx.holderData.topHolderPercent,
-        required: cfg.maxTopHolderPercent,
-      });
-      return false;
+      failed.push(`top_holder_too_high(${ctx.holderData.topHolderPercent.toFixed(1)}%>${cfg.maxTopHolderPercent}%)`);
     }
-
     if (ctx.holderData.top5HolderPercent > cfg.maxTop5HolderPercent) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'top5HolderPercent',
-        value: ctx.holderData.top5HolderPercent,
-        required: cfg.maxTop5HolderPercent,
-      });
-      return false;
+      failed.push(`top5_holder_too_high(${ctx.holderData.top5HolderPercent.toFixed(1)}%>${cfg.maxTop5HolderPercent}%)`);
     }
-
     const top10 = ctx.holderData.top10HolderPercent;
     if (top10 !== undefined && top10 > cfg.maxTop10HolderPercent) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'top10HolderPercent',
-        value: top10,
-        required: cfg.maxTop10HolderPercent,
-      });
-      return false;
+      failed.push(`top10_holder_too_high(${top10.toFixed(1)}%>${cfg.maxTop10HolderPercent}%)`);
     }
-
     if (!ctx.safetyData.mintAuthorityDisabled) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'mintAuthorityDisabled',
-        value: false,
-        required: true,
-      });
-      return false;
+      failed.push('mint_authority_active');
     }
-
     if (!ctx.safetyData.freezeAuthorityAbsent) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'freezeAuthorityAbsent',
-        value: false,
-        required: true,
-      });
-      return false;
+      failed.push('freeze_authority_set');
     }
-
     if (ctx.volumeContext.buyTxLast60s < cfg.minBuyTxLast60s) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'buyTxLast60s',
-        value: ctx.volumeContext.buyTxLast60s,
-        required: cfg.minBuyTxLast60s,
-      });
-      return false;
+      failed.push(`buy_tx_too_low(${ctx.volumeContext.buyTxLast60s}<${cfg.minBuyTxLast60s})`);
     }
-
     if (ctx.safetyData.isBlacklisted) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'isBlacklisted',
-        value: true,
-        required: false,
-      });
-      return false;
+      failed.push('token_blacklisted');
     }
-
     if (ctx.safetyData.rugScore < cfg.minRugScoreSignal) {
-      logger.debug('SIGNAL_STACK_FAIL', {
-        tokenMint,
-        failedCondition: 'rugScore',
-        value: ctx.safetyData.rugScore,
-        required: cfg.minRugScoreSignal,
-      });
-      return false;
+      failed.push(`rug_score_too_low(${ctx.safetyData.rugScore}<${cfg.minRugScoreSignal})`);
     }
 
+    if (failed.length > 0) {
+      logger.debug('SIGNAL_STACK_FAIL', { tokenMint, failedConditions: failed });
+      return { passed: false, failedConditions: failed };
+    }
     logger.debug('SIGNAL_STACK_PASSED', { tokenMint });
-    return true;
+    return { passed: true, failedConditions: [] };
   }
 
   private isAntifomoTriggered(ctx: StrategyContext): boolean {
