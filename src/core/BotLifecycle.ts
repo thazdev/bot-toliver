@@ -24,6 +24,7 @@ export class BotLifecycle {
   private stopCallbacks: StopCallback[] = [];
   private startCallbacks: StartCallback[] = [];
   private transitionPromise: Promise<void> | null = null;
+  private commandHandlers: Map<string, () => void | Promise<void>> = new Map();
 
   private constructor() {}
 
@@ -62,6 +63,11 @@ export class BotLifecycle {
     this.startCallbacks.push(cb);
   }
 
+  /** Registra handler para comando customizado (ex: reset_emergency_halt). */
+  onCommand(action: string, handler: () => void | Promise<void>): void {
+    this.commandHandlers.set(action, handler);
+  }
+
   /**
    * Inicia o subscriber Redis dedicado que escuta comandos do dashboard.
    * Este subscriber permanece vivo mesmo quando o bot está STOPPED.
@@ -87,6 +93,13 @@ export class BotLifecycle {
         void this.start();
       } else if (action === 'stop' && this.state === 'RUNNING') {
         void this.stop();
+      } else {
+        const handler = this.commandHandlers.get(action);
+        if (handler) {
+          void Promise.resolve(handler()).catch((err) =>
+            logger.error('BotLifecycle: command handler error', { action, error: String(err) }),
+          );
+        }
       }
     });
 

@@ -103,8 +103,8 @@ export class LogsListener extends BaseListener {
   }
 
   private async processLogs(programName: string, programId: string, logs: Logs): Promise<void> {
-    if (!this.isActive || isConnectionsPaused() || !(await isBotEnabled())) return;
     BotHealthMonitor.recordEvent();
+    if (!this.isActive || isConnectionsPaused() || !(await isBotEnabled())) return;
     this.logBatchCount++;
     this.eventCounter++;
 

@@ -42,6 +42,10 @@ export class BotHealthMonitor {
   static recordEvent(): void {
     if (BotHealthMonitor.instance) {
       BotHealthMonitor.instance.lastEventProcessedAt = Date.now();
+      if (BotHealthMonitor.instance.tradingGuard.isEmergencyHalted()) {
+        BotHealthMonitor.instance.tradingGuard.setEmergencyHalt(false);
+        logger.warn('BotHealthMonitor: activity resumed — emergency halt reset');
+      }
     }
   }
 

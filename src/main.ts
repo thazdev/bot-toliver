@@ -1077,6 +1077,11 @@ async function main(): Promise<void> {
   // ── BotLifecycle: controle centralizado de start/stop ──
   const lifecycle = BotLifecycle.getInstance();
 
+  lifecycle.onCommand('reset_emergency_halt', () => {
+    tradingGuard.setEmergencyHalt(false);
+    logger.warn('BotLifecycle: emergency halt reset via command');
+  });
+
   lifecycle.onStop(async () => {
     setConnectionsPaused(true);
     for (const listener of listeners) {
