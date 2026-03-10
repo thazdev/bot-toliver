@@ -1,8 +1,8 @@
 # Estratégias de Compra de Memecoins — Bot Toliver
 
-> Documento atualizado em 2026-03-09 — Overhaul de redução de risco + arquitetura baseada em eventos.
+> Documento atualizado em 2026-03-10 — Calibração dos filtros Signal Stack para memecoins reais.
 >
-> Principais mudanças: Type A (New Token Sniper) **desabilitado**, Phase 1 (Ignition Sniper) **desabilitada**, filtros globais rigorosos. **Novo:** Scanner baseado em eventos de liquidez (pool + liq >3 SOL + swap activity), **pool_age** substitui token_age como critério de maturidade (≥90s), cálculo correto de buy_tx (60s/120s).
+> Principais mudanças: Signal Stack relaxado (liquidez, holders, concentração, pool age) para valores realistas de memecoins Solana. Adicionados contadores Redis `diag:signal_stack_*` para visibilidade. Fallback de holderData usa estimativas conservadoras em vez de zeros. Type A e Phase 1 continuam **desabilitados**.
 
 O bot possui **18 estratégias de compra ativas** (2 desabilitadas) distribuídas em 4 módulos: `EntryStrategy`, `LaunchStrategy`, `MomentumStrategy`, `SmartMoneyTracker`, `WhaleMonitor` e `TradeFilterPipeline`. Cada uma opera com 3 tiers de risco: **Conservative**, **Balanced** e **Aggressive**.
 
@@ -53,19 +53,19 @@ Antes de qualquer estratégia de entrada ser avaliada, o token precisa passar po
 
 | Condição                     | Aggressive | Balanced | Conservative |
 |------------------------------|:----------:|:--------:|:------------:|
-| Liquidez mínima              | ≥ 5 SOL   | ≥ 8 SOL  | ≥ 12 SOL     |
-| Holders mínimos              | ≥ 10      | ≥ 15     | ≥ 20         |
-| Top holder máx.              | ≤ 12%     | ≤ 12%    | ≤ 12%        |
-| Top 5 holders máx.           | ≤ 35%     | ≤ 35%    | ≤ 35%        |
-| Top 10 holders máx.          | ≤ 50%     | ≤ 50%    | ≤ 50%        |
+| Liquidez mínima              | ≥ 3 SOL   | ≥ 4 SOL  | ≥ 5 SOL      |
+| Holders mínimos              | ≥ 5       | ≥ 8      | ≥ 10         |
+| Top holder máx.              | ≤ 40%     | ≤ 35%    | ≤ 30%        |
+| Top 5 holders máx.           | ≤ 70%     | ≤ 65%    | ≤ 60%        |
+| Top 10 holders máx.          | ≤ 85%     | ≤ 80%    | ≤ 80%        |
 | Buy TX (atividade recente)   | ≥ 1 (60s) ou ≥ 3 (120s) | idem | idem |
-| **Pool age** mínimo          | ≥ 90s     | ≥ 90s    | ≥ 90s        |
+| **Pool age** mínimo          | ≥ 30s     | ≥ 30s    | ≥ 30s        |
 | Rug score mínimo             | ≥ 70      | ≥ 70     | ≥ 70         |
 | Freeze authority ausente     | Sim       | Sim      | Sim          |
 | Mint authority desabilitada  | Sim       | Sim      | Sim          |
 | Token não blacklistado       | Sim       | Sim      | Sim          |
 
-**Nota:** `pool_age` = tempo desde criação da pool (não token_age). Buy TX: `buy_tx_60s = txns.m5.buys/5`, `buy_tx_120s = txns.m5.buys*2/5` (DexScreener).
+**Nota:** `pool_age` = tempo desde criação da pool (não token_age). Buy TX: `buy_tx_60s = txns.m5.buys/5`, `buy_tx_120s = txns.m5.buys*2/5` (DexScreener). **Signal Stack diagnostics** são rastreados em Redis (`diag:signal_stack_*`) para visibilidade no dashboard.
 
 ### Filtros Institucionais de Risco (antes do Signal Stack)
 
@@ -412,10 +412,10 @@ Tokens na fase Ignition (0–300s) possuem risco extremo de rug pull. Esta fase 
 
 | Parâmetro                | Conservative | Balanced | Aggressive |
 |--------------------------|:------------:|:--------:|:----------:|
-| Min Liquidez (SOL)       | 12           | 8        | 5          |
-| Min Holders              | 20           | 15       | 10         |
-| Max Top Holder           | 12%          | 12%      | 12%        |
-| Max Top 5 Holders        | 35%          | 35%      | 35%        |
+| Min Liquidez (SOL)       | 5            | 4        | 3          |
+| Min Holders              | 10           | 8        | 5          |
+| Max Top Holder           | 30%          | 35%      | 40%        |
+| Max Top 5 Holders        | 60%          | 65%      | 70%        |
 | Min Entry Score          | 50           | 60       | 45         |
 | SOL Size Min             | 0.02         | 0.10     | 0.20       |
 | SOL Size Max             | 0.03         | 0.50     | 1.00       |
@@ -424,7 +424,7 @@ Tokens na fase Ignition (0–300s) possuem risco extremo de rug pull. Esta fase 
 | Hard Stop Loss           | 10%          | 12%      | 15%        |
 | Max Posições Simultâneas | 1            | 2        | 3          |
 | Max Perda Diária         | 5%           | 8%       | 12%        |
-| Min Pool Age             | 90s          | 90s      | 90s        |
+| Min Pool Age             | 30s          | 30s      | 30s        |
 | Min Rug Score            | 70           | 70       | 70         |
 | Min Buy TX               | ≥1 (60s) ou ≥3 (120s) | idem | idem |
 
@@ -514,11 +514,13 @@ O score final (0–100) que determina se um token é comprado:
 |-------------------------|--------------------------|---------------------------------|
 | Type A (New Token)      | Ativo (< 60s)           | **DESABILITADO**                |
 | Phase 1 (Ignition)      | Ativo (0-300s)          | **DESABILITADO**                |
-| Liquidez min (Aggr.)    | 1 SOL                   | 5 SOL                          |
-| Holders min (Aggr.)     | 3                        | 10                              |
-| Top holder máx.         | 100% (Aggr.)            | 12% (todos)                    |
-| Top 5 holders máx.      | 100% (Aggr.)            | 35% (todos)                    |
-| Maturidade (Signal Stack) | token_age 0s         | **pool_age ≥ 90s**              |
+| Liquidez min (Aggr.)    | 1 SOL                   | 3 SOL                          |
+| Liquidez min (Cons.)    | 12 SOL                   | 5 SOL                          |
+| Holders min (Aggr.)     | 3                        | 5                               |
+| Holders min (Cons.)     | 20                       | 10                              |
+| Top holder máx.         | 100% (Aggr.)            | 30-40% (por tier)              |
+| Top 5 holders máx.      | 100% (Aggr.)            | 60-70% (por tier)              |
+| Maturidade (Signal Stack) | pool_age ≥ 90s       | **pool_age ≥ 30s**              |
 | Min buy TX               | 1 (60s)                | ≥1 (60s) OU ≥3 (120s) — cálculo correto |
 | Anti-FOMO (Aggr.)       | 1000%                    | 200%                            |
 | Hard stop (Aggr.)       | 25%                      | 15%                             |

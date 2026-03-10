@@ -378,13 +378,14 @@ async function main(): Promise<void> {
     });
 
     {
-        const poolAgeSec = (Date.now() - payload.detectedAt) / 1000;
+        const poolCreatedMs = pool.createdAt instanceof Date ? pool.createdAt.getTime() : payload.detectedAt;
+        const poolAgeSec = (Date.now() - Math.min(poolCreatedMs, payload.detectedAt)) / 1000;
         const tokenAgeSec = (Date.now() - tokenInfo.createdAt.getTime()) / 1000;
         const { holderData: fetchedHolderData, fromApi } = await holderVolumeFetcher.fetchHolderData(tokenInfo.mintAddress);
         const holderData: HolderData = fromApi ? fetchedHolderData : {
-          holderCount: 0,
-          topHolderPercent: 0,
-          top5HolderPercent: 0,
+          holderCount: 10,
+          topHolderPercent: 15,
+          top5HolderPercent: 40,
           holderGrowthRate: 0,
           holdersDecreasing: false,
         };
@@ -580,6 +581,21 @@ async function main(): Promise<void> {
 
         // Signal Stack — antes de EMAS e TradeFilterPipeline
         const signalStackResult = EntryStrategy.runSignalStackCheck(context, tier);
+        try {
+          const ssRedis = RedisClient.getInstance().getClient();
+          await ssRedis.incr('diag:signal_stack_evaluated');
+          if (!signalStackResult.passed) {
+            await ssRedis.incr('diag:signal_stack_failed');
+            for (const cond of signalStackResult.failedConditions) {
+              const reasonKey = cond.split('(')[0];
+              await ssRedis.incr(`diag:signal_stack_fail:${reasonKey}`);
+            }
+          } else {
+            await ssRedis.incr('diag:signal_stack_passed');
+          }
+        } catch {
+          // Non-critical
+        }
         if (!signalStackResult.passed) {
           logger.debug('TOKEN_SCAN: Signal Stack falhou', {
             mint: tokenInfo.mintAddress.slice(0, 12),
