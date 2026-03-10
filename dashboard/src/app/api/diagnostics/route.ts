@@ -27,6 +27,24 @@ const STAGE1_REASON_KEYS = [
 export interface DiagnosticsResponse {
   pipeline: {
     tokens_received: number;
+    pre_pipeline: {
+      logs_no_token: number;
+      listener_liquidity_below: number;
+      scanner_skip_cache: number;
+      scanner_skip_no_mint: number;
+      scanner_skip_account_not_found: number;
+      scanner_skip_error: number;
+      pool_not_found: number;
+      swap_gate_deferred: number;
+      swap_gate_dropped: number;
+      institutional_filtered: number;
+    };
+    signal_stack: {
+      evaluated: number;
+      passed: number;
+      failed: number;
+      fail_reasons: Record<string, number>;
+    };
     stage1: { total: number; reasons: Record<string, number> };
     stage2: { total: number; reasons: Record<string, number>; passed: number };
     stage3_entries: number;
@@ -69,6 +87,14 @@ export async function GET() {
       return NextResponse.json({
         pipeline: {
           tokens_received: 0,
+          pre_pipeline: {
+            logs_no_token: 0, listener_liquidity_below: 0,
+            scanner_skip_cache: 0, scanner_skip_no_mint: 0,
+            scanner_skip_account_not_found: 0, scanner_skip_error: 0,
+            pool_not_found: 0, swap_gate_deferred: 0, swap_gate_dropped: 0,
+            institutional_filtered: 0,
+          },
+          signal_stack: { evaluated: 0, passed: 0, failed: 0, fail_reasons: {} },
           stage1: { total: 0, reasons: {} },
           stage2: { total: 0, reasons: {}, passed: 0 },
           stage3_entries: 0,
@@ -87,6 +113,19 @@ export async function GET() {
 
   const pipeline: DiagnosticsResponse['pipeline'] = {
     tokens_received: 0,
+    pre_pipeline: {
+      logs_no_token: 0,
+      listener_liquidity_below: 0,
+      scanner_skip_cache: 0,
+      scanner_skip_no_mint: 0,
+      scanner_skip_account_not_found: 0,
+      scanner_skip_error: 0,
+      pool_not_found: 0,
+      swap_gate_deferred: 0,
+      swap_gate_dropped: 0,
+      institutional_filtered: 0,
+    },
+    signal_stack: { evaluated: 0, passed: 0, failed: 0, fail_reasons: {} },
     stage1: { total: 0, reasons: {} },
     stage2: { total: 0, reasons: {}, passed: 0 },
     stage3_entries: 0,
@@ -105,6 +144,36 @@ export async function GET() {
   };
 
   pipeline.tokens_received = await getInt('diag:tokens_received_total');
+
+  // Pre-pipeline counters
+  pipeline.pre_pipeline.logs_no_token = await getInt('diag:logs_no_token_detected');
+  pipeline.pre_pipeline.listener_liquidity_below = await getInt('diag:listener_liquidity_below');
+  pipeline.pre_pipeline.scanner_skip_cache = await getInt('diag:scanner_skip:cache');
+  pipeline.pre_pipeline.scanner_skip_no_mint = await getInt('diag:scanner_skip:no_mint');
+  pipeline.pre_pipeline.scanner_skip_account_not_found = await getInt('diag:scanner_skip:account_not_found');
+  pipeline.pre_pipeline.scanner_skip_error = await getInt('diag:scanner_skip:error');
+  pipeline.pre_pipeline.pool_not_found = await getInt('diag:pool_not_found');
+  pipeline.pre_pipeline.swap_gate_deferred = await getInt('diag:swap_gate_deferred');
+  pipeline.pre_pipeline.swap_gate_dropped = await getInt('diag:swap_gate_dropped');
+  pipeline.pre_pipeline.institutional_filtered = await getInt('diag:institutional_filtered');
+
+  // Signal Stack counters
+  pipeline.signal_stack.evaluated = await getInt('diag:signal_stack_evaluated');
+  pipeline.signal_stack.passed = await getInt('diag:signal_stack_passed');
+  pipeline.signal_stack.failed = await getInt('diag:signal_stack_failed');
+
+  // Signal Stack per-condition failure reasons (scan for keys matching pattern)
+  const SIGNAL_STACK_FAIL_REASONS = [
+    'pool_age_too_low', 'liquidity_below_threshold', 'holder_count_too_low',
+    'top_holder_too_high', 'top5_holder_too_high', 'top10_holder_too_high',
+    'mint_authority_active', 'freeze_authority_set', 'buy_tx_too_low',
+    'token_blacklisted', 'rug_score_too_low',
+  ] as const;
+  for (const reason of SIGNAL_STACK_FAIL_REASONS) {
+    const val = await getInt(`diag:signal_stack_fail:${reason}`);
+    if (val > 0) pipeline.signal_stack.fail_reasons[reason] = val;
+  }
+
   pipeline.stage1.total = await getInt('diag:tokens_stage1_rejected');
   for (const k of STAGE1_REASON_KEYS) {
     pipeline.stage1.reasons[k] = await getInt(`diag:stage1_reject_${k}`);

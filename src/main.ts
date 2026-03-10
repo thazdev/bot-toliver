@@ -330,6 +330,10 @@ async function main(): Promise<void> {
           : skipReason === 'account_not_found' ? 'conta mint não encontrada na chain'
           : skipReason === 'error' ? 'erro ao processar'
           : 'desconhecido';
+        try {
+          const redis = RedisClient.getInstance().getClient();
+          await redis.incr(`diag:scanner_skip:${skipReason ?? 'unknown'}`);
+        } catch { /* non-critical */ }
         logger.debug('TOKEN_SCAN: token ignorado', {
           motivo: reasonMsg,
           mint: payload.tokenInfo.mintAddress?.slice(0, 12) ?? 'vazio',
@@ -352,6 +356,10 @@ async function main(): Promise<void> {
       });
       if (!pool) {
         tokensPoolNotFound++;
+        try {
+          const redis = RedisClient.getInstance().getClient();
+          await redis.incr('diag:pool_not_found');
+        } catch { /* non-critical */ }
         logger.debug('TOKEN_SCAN: pool não encontrado', {
           mint: tokenInfo.mintAddress.slice(0, 12),
           source: payload.source,
@@ -406,6 +414,10 @@ async function main(): Promise<void> {
             deferCount: deferCount + 1,
           };
           await queueManager.addJob(QueueName.TOKEN_SCAN, 'pool-created-defer', deferredPayload as unknown as Record<string, unknown>, { delay: 60_000 });
+          try {
+            const redis = RedisClient.getInstance().getClient();
+            await redis.incr('diag:swap_gate_deferred');
+          } catch { /* non-critical */ }
           logger.debug('TOKEN_SCAN: defer por ausência de swap activity', {
             mint: tokenInfo.mintAddress.slice(0, 12),
             buyTx60s: buyTxLast60sGate,
@@ -415,6 +427,10 @@ async function main(): Promise<void> {
           return;
         }
         if (!hasSwapActivity && deferCount >= 2) {
+          try {
+            const redis = RedisClient.getInstance().getClient();
+            await redis.incr('diag:swap_gate_dropped');
+          } catch { /* non-critical */ }
           logger.debug('TOKEN_SCAN: ignorado após 2 defers — sem swap activity', {
             mint: tokenInfo.mintAddress.slice(0, 12),
           });
@@ -428,6 +444,10 @@ async function main(): Promise<void> {
           poolAgeSec,
         );
         if (!instRiskResult.passed) {
+          try {
+            const redis = RedisClient.getInstance().getClient();
+            await redis.incr('diag:institutional_filtered');
+          } catch { /* non-critical */ }
           logger.debug('TOKEN_SCAN: bloqueado por filtro institucional', {
             mint: tokenInfo.mintAddress.slice(0, 12),
             reason: instRiskResult.reason,

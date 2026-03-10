@@ -303,7 +303,13 @@ export class LogsListener extends BaseListener {
     const minLiq = parseFloat(process.env.MIN_LIQUIDITY_SOL ?? '3');
     const liquiditySol = detected.initialLiquiditySOL ?? 0;
 
-    if (minLiq > 0 && liquiditySol < minLiq) {
+    // Se liquidez não pôde ser extraída dos logs (0), deixar passar — poolScanner valida depois.
+    // Só bloquear quando a liquidez foi realmente lida e está abaixo do mínimo.
+    if (minLiq > 0 && liquiditySol > 0 && liquiditySol < minLiq) {
+      try {
+        const redis = RedisClient.getInstance().getClient();
+        await redis.incr('diag:listener_liquidity_below');
+      } catch { /* non-critical */ }
       if (Date.now() - this.lastLiquidityBelowAt > LOG_THROTTLE_MS) {
         this.lastLiquidityBelowAt = Date.now();
         logger.debug('LogsListener: token ignorado (liquidez abaixo do mínimo)', {

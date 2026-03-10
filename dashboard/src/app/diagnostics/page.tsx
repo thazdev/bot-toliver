@@ -276,6 +276,67 @@ export default function DiagnosticsPage() {
 
       {data && (
         <div className="space-y-6">
+          {/* ROW 0 — Pre-Pipeline Breakdown */}
+          <GlassCard>
+            <h3 className="mb-4 text-sm font-semibold text-slate-300">Pré-Pipeline (antes de tokens_received)</h3>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: 'Logs sem token', value: data.pipeline.pre_pipeline?.logs_no_token },
+                { label: 'Liquidez abaixo (listener)', value: data.pipeline.pre_pipeline?.listener_liquidity_below },
+                { label: 'Cache (duplicado)', value: data.pipeline.pre_pipeline?.scanner_skip_cache },
+                { label: 'Mint vazio', value: data.pipeline.pre_pipeline?.scanner_skip_no_mint },
+                { label: 'Conta não encontrada', value: data.pipeline.pre_pipeline?.scanner_skip_account_not_found },
+                { label: 'Erro scanner', value: data.pipeline.pre_pipeline?.scanner_skip_error },
+                { label: 'Pool não encontrado', value: data.pipeline.pre_pipeline?.pool_not_found },
+                { label: 'Swap gate: defer', value: data.pipeline.pre_pipeline?.swap_gate_deferred },
+                { label: 'Swap gate: drop', value: data.pipeline.pre_pipeline?.swap_gate_dropped },
+                { label: 'Filtro institucional', value: data.pipeline.pre_pipeline?.institutional_filtered },
+              ].filter(item => (item.value ?? 0) > 0 || true).map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-lg border border-card-border bg-white/5 px-3 py-2 text-xs"
+                >
+                  <span className="text-slate-400">{item.label}:</span>{' '}
+                  <span className={`font-semibold ${(item.value ?? 0) > 0 ? 'text-warning' : 'text-slate-500'}`}>{item.value ?? 0}</span>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+
+          {/* ROW 0.5 — Signal Stack */}
+          <GlassCard>
+            <h3 className="mb-4 text-sm font-semibold text-slate-300">Signal Stack</h3>
+            <div className="flex flex-wrap gap-4 mb-3">
+              <div className="text-xs">
+                <span className="text-slate-400">Avaliados:</span>{' '}
+                <span className="font-semibold text-slate-200">{data.pipeline.signal_stack?.evaluated ?? 0}</span>
+              </div>
+              <div className="text-xs">
+                <span className="text-slate-400">Passou:</span>{' '}
+                <span className="font-semibold text-success">{data.pipeline.signal_stack?.passed ?? 0}</span>
+              </div>
+              <div className="text-xs">
+                <span className="text-slate-400">Falhou:</span>{' '}
+                <span className="font-semibold text-danger">{data.pipeline.signal_stack?.failed ?? 0}</span>
+              </div>
+            </div>
+            {data.pipeline.signal_stack?.fail_reasons && Object.keys(data.pipeline.signal_stack.fail_reasons).length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(data.pipeline.signal_stack.fail_reasons)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([reason, count]) => (
+                  <div
+                    key={reason}
+                    className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-xs"
+                  >
+                    <span className="text-slate-400">{reason}:</span>{' '}
+                    <span className="font-semibold text-danger">{count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+
           {/* ROW 1 — Pipeline Funnel */}
           <GlassCard>
             <h3 className="mb-4 text-sm font-semibold text-slate-300">Funil do Pipeline</h3>
