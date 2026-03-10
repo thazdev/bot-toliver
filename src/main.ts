@@ -554,9 +554,14 @@ async function main(): Promise<void> {
           solPriceChange24h: 0,
 
           price60sAgo: 0,
-          priceRising: false,
-          uniqueBuyers5min: 0,
-          buySellRatio5min: 0.5,
+          priceRising: (dexVolume.buyTxLast60s ?? 0) > (dexVolume.sellTxLast20 ?? 0),
+          uniqueBuyers5min: dexVolume.buyTxLast20 ?? 0,
+          uniqueBuyers2min: Math.round((dexVolume.buyTxLast20 ?? 0) * 0.4),
+          buySellRatio5min: (() => {
+            const b = dexVolume.buyTxLast20 ?? 0;
+            const s = dexVolume.sellTxLast20 ?? 0;
+            return (b + s) > 0 ? b / (b + s) : 0.5;
+          })(),
           liquidityStable: true,
           tokenSource: tokenInfo.source === 'pumpfun' ? 'pumpfun' : tokenInfo.source === 'raydium' || tokenInfo.source === 'raydium_clmm' ? 'raydium' : 'unknown',
           pumpfunMarketCap: 0,

@@ -144,8 +144,9 @@ export class LaunchStrategy extends BaseStrategy {
       return skip(`Phase 2: holder count ${context.holderData.holderCount} < ${cfg.phase2MinHolders}`);
     }
 
-    if (context.uniqueBuyers5min < cfg.phase2MinUniqueBuyers) {
-      return skip(`Phase 2: unique buyers ${context.uniqueBuyers5min} < ${cfg.phase2MinUniqueBuyers}`);
+    const uniqueBuyers5min = context.uniqueBuyers5min || context.volumeContext.buyTxLast60s * 3;
+    if (uniqueBuyers5min < cfg.phase2MinUniqueBuyers) {
+      return skip(`Phase 2: unique buyers ${uniqueBuyers5min} < ${cfg.phase2MinUniqueBuyers}`);
     }
 
     if (context.buySellRatio5min < cfg.phase2MinBuySellRatio) {
@@ -167,8 +168,9 @@ export class LaunchStrategy extends BaseStrategy {
       return skip(`Phase 2: already pumped ${context.priceChangeFromLaunch.toFixed(0)}% > ${cfg.phase2MaxPriceFromLaunch}%`);
     }
 
-    if (context.liquidity < 8) {
-      return skip(`Phase 2: liquidity ${context.liquidity.toFixed(1)} SOL < 8 SOL`);
+    const minLiqP2 = this.tierConfig.entry.minLiquiditySol;
+    if (context.liquidity < minLiqP2) {
+      return skip(`Phase 2: liquidity ${context.liquidity.toFixed(1)} SOL < ${minLiqP2} SOL`);
     }
 
     if (!context.liquidityStable) {
@@ -242,8 +244,9 @@ export class LaunchStrategy extends BaseStrategy {
       return skip(`Phase 3: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < 0.58`);
     }
 
-    if (context.liquidity < 10) {
-      return skip(`Phase 3: liquidity ${context.liquidity.toFixed(1)} SOL < 10 SOL`);
+    const minLiqP3 = this.tierConfig.entry.minLiquiditySol;
+    if (context.liquidity < minLiqP3) {
+      return skip(`Phase 3: liquidity ${context.liquidity.toFixed(1)} SOL < ${minLiqP3} SOL`);
     }
 
     if (

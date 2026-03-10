@@ -196,8 +196,9 @@ export class EntryStrategy extends BaseStrategy {
       }
     }
 
-    if (ctx.volumeContext.sellTxLast20 > ctx.volumeContext.buyTxLast20) {
-      logger.debug('EntryStrategy: sell pressure exceeds buy pressure in last 20 txns');
+    const totalTx20 = ctx.volumeContext.sellTxLast20 + ctx.volumeContext.buyTxLast20;
+    if (totalTx20 > 0 && ctx.volumeContext.sellTxLast20 > ctx.volumeContext.buyTxLast20 * 1.5) {
+      logger.debug('EntryStrategy: sell pressure significantly exceeds buy pressure in last 20 txns');
       return true;
     }
 
@@ -363,18 +364,20 @@ export class EntryStrategy extends BaseStrategy {
     if (ctx.safetyData.isBlacklisted) {
       return { pass: false, reason: 'Token is blacklisted' };
     }
-    if (ctx.holderData.holderCount < 10) {
-      return { pass: false, reason: `Holder count ${ctx.holderData.holderCount} < 10` };
+    const minHolders = this.tierConfig.entry.minHolderCount;
+    if (ctx.holderData.holderCount < minHolders) {
+      return { pass: false, reason: `Holder count ${ctx.holderData.holderCount} < ${minHolders}` };
     }
-    if (ctx.holderData.topHolderPercent > 12) {
-      return { pass: false, reason: `Top holder ${ctx.holderData.topHolderPercent.toFixed(1)}% > 12%` };
+    const maxTopHolder = this.tierConfig.entry.maxTopHolderPercent;
+    if (ctx.holderData.topHolderPercent > maxTopHolder) {
+      return { pass: false, reason: `Top holder ${ctx.holderData.topHolderPercent.toFixed(1)}% > ${maxTopHolder}%` };
     }
     if (ctx.buySellRatio5min < 0.60) {
       return { pass: false, reason: `Buy/sell ratio ${ctx.buySellRatio5min.toFixed(2)} < 0.60` };
     }
-    const uniqueBuyers2min = ctx.uniqueBuyers2min ?? 0;
-    if (uniqueBuyers2min < 8) {
-      return { pass: false, reason: `Unique buyers (2min) ${uniqueBuyers2min} < 8` };
+    const uniqueBuyers2min = ctx.uniqueBuyers2min ?? ctx.volumeContext.buyTxLast60s;
+    if (uniqueBuyers2min < 3) {
+      return { pass: false, reason: `Unique buyers (2min) ${uniqueBuyers2min} < 3` };
     }
     return { pass: true, reason: 'Type B pool creation conditions met' };
   }
@@ -384,23 +387,21 @@ export class EntryStrategy extends BaseStrategy {
       ? ctx.volumeContext.volume1min / ctx.volumeContext.volume5minAvg
       : 0;
 
-    if (volumeRatio < 2.5) {
-      return { pass: false, reason: `Volume ratio ${volumeRatio.toFixed(1)} < 2.5x threshold` };
+    const minVolRatio = this.tierConfig.momentum.minVolumeMultiplier ?? 2.0;
+    if (volumeRatio < minVolRatio) {
+      return { pass: false, reason: `Volume ratio ${volumeRatio.toFixed(1)} < ${minVolRatio}x threshold` };
     }
-    if (ctx.priceChangePercent5min < 8 || ctx.priceChangePercent5min > 80) {
-      return { pass: false, reason: `5min price change ${ctx.priceChangePercent5min.toFixed(1)}% not in 8–80% range` };
+    const priceChange = ctx.priceChangePercent5min || ctx.priceChangeFromLaunch;
+    const minPriceChange = this.tierConfig.momentum.minPriceChange5min ?? 5;
+    if (priceChange < minPriceChange || priceChange > 200) {
+      return { pass: false, reason: `Price change ${priceChange.toFixed(1)}% not in ${minPriceChange}–200% range` };
     }
-    if (ctx.holderData.holderGrowthRate < 2) {
-      return { pass: false, reason: `Holder growth ${ctx.holderData.holderGrowthRate.toFixed(1)}/min < 2/min` };
+    if (ctx.buySellRatio5min < 0.55) {
+      return { pass: false, reason: `Buy/sell ratio ${ctx.buySellRatio5min.toFixed(2)} < 0.55` };
     }
-    if (ctx.liquidityUsd < 15_000) {
-      return { pass: false, reason: `Liquidity $${ctx.liquidityUsd.toFixed(0)} < $15,000` };
-    }
-    if (ctx.buySellRatio5min < 0.60) {
-      return { pass: false, reason: `Buy/sell ratio ${ctx.buySellRatio5min.toFixed(2)} < 0.60` };
-    }
-    if (ctx.uniqueBuyers5min < 15) {
-      return { pass: false, reason: `Unique buyers (5min) ${ctx.uniqueBuyers5min} < 15` };
+    const uniqueBuyers = ctx.uniqueBuyers5min || ctx.volumeContext.buyTxLast60s * 3;
+    if (uniqueBuyers < 5) {
+      return { pass: false, reason: `Unique buyers (5min) ${uniqueBuyers} < 5` };
     }
     return { pass: true, reason: 'Type C momentum confirmation conditions met' };
   }

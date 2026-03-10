@@ -11,16 +11,16 @@ import type {
   StrategyTier,
 } from '../types/strategy.types.js';
 
-const EMAS_MIN = 75;
-const POOL_AGE_MIN_SEC = 120;
-const POOL_AGE_MAX_SEC = 900;
-const MIN_LIQUIDITY_SOL = 8;
-const MIN_RUG_SCORE = 75;
+const EMAS_MIN = 60;
+const POOL_AGE_MIN_SEC = 60;
+const POOL_AGE_MAX_SEC = 1800;
+const MIN_LIQUIDITY_SOL = 5;
+const MIN_RUG_SCORE = 70;
 const SIZE_MULTIPLIER = 0.6;
 
 export class EarlyMomentumStrategy extends BaseStrategy {
   readonly name = 'EarlyMomentumStrategy';
-  readonly description = 'Early momentum accumulation entry — EMAS ≥ 75, pool 120–900s, liq ≥ 8 SOL';
+  readonly description = 'Early momentum accumulation entry — EMAS ≥ 60, pool 60–1800s, liq ≥ 5 SOL';
   readonly version = '1.0.0';
 
   private tier: StrategyTier;

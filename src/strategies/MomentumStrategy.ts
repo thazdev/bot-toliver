@@ -68,15 +68,16 @@ export class MomentumStrategy extends BaseStrategy {
     }
 
     if (volTrend > cfg.strongMomentumVolTrend && context.priceRising) {
-      if (context.priceChangePercent5min < 12) {
-        return skip(`Strong momentum blocked: 5min price change ${context.priceChangePercent5min.toFixed(1)}% < 12%`);
+      const priceChange = context.priceChangePercent5min || context.priceChangeFromLaunch;
+      if (priceChange > 0 && priceChange < 8) {
+        return skip(`Strong momentum blocked: price change ${priceChange.toFixed(1)}% < 8%`);
       }
-      if (context.buySellRatio5min < 0.62) {
-        return skip(`Strong momentum blocked: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < 0.62`);
+      if (context.buySellRatio5min < 0.58) {
+        return skip(`Strong momentum blocked: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < 0.58`);
       }
-      const ub2min = context.uniqueBuyers2min ?? 0;
-      if (ub2min < 10) {
-        return skip(`Strong momentum blocked: unique buyers (2min) ${ub2min} < 10`);
+      const ub2min = context.uniqueBuyers2min ?? context.volumeContext.buyTxLast60s;
+      if (ub2min < 3) {
+        return skip(`Strong momentum blocked: unique buyers (2min) ${ub2min} < 3`);
       }
 
       const confidence = Math.min(1.0, (momentumScore / 100) + 0.15);
@@ -98,14 +99,16 @@ export class MomentumStrategy extends BaseStrategy {
     }
 
     if (volTrend >= cfg.moderateMomentumVolTrend && context.priceRising) {
-      if (context.priceChangePercent5min < 6) {
-        return skip(`Moderate momentum blocked: 5min price change ${context.priceChangePercent5min.toFixed(1)}% < 6%`);
+      const priceChange = context.priceChangePercent5min || context.priceChangeFromLaunch;
+      if (priceChange > 0 && priceChange < 5) {
+        return skip(`Moderate momentum blocked: price change ${priceChange.toFixed(1)}% < 5%`);
       }
-      if (context.buySellRatio5min < 0.58) {
-        return skip(`Moderate momentum blocked: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < 0.58`);
+      if (context.buySellRatio5min < 0.55) {
+        return skip(`Moderate momentum blocked: buy/sell ratio ${context.buySellRatio5min.toFixed(2)} < 0.55`);
       }
-      if (context.liquidity < 8) {
-        return skip(`Moderate momentum blocked: liquidity ${context.liquidity.toFixed(1)} SOL < 8 SOL`);
+      const minLiq = this.tierConfig.entry.minLiquiditySol;
+      if (context.liquidity < minLiq) {
+        return skip(`Moderate momentum blocked: liquidity ${context.liquidity.toFixed(1)} SOL < ${minLiq} SOL`);
       }
 
       const confidence = Math.min(1.0, momentumScore / 100);
@@ -150,16 +153,17 @@ export class MomentumStrategy extends BaseStrategy {
 
   isWashTrading(context: StrategyContext): boolean {
     const vol = context.volumeContext;
-    // Sem dados de volume, não podemos detectar wash — não bloquear por falsos positivos
     if (vol.uniqueWalletsPerVolume === 0 && vol.volume5minAvg === 0) {
       return false;
     }
+    // uniqueWalletsPerVolume=0 com volume presente = dado indisponível (DexScreener não fornece)
+    // Só flagrar quando temos dados reais de wallet (> 0 mas abaixo do limiar)
     const minWallets = parseInt(process.env.WASH_MIN_UNIQUE_WALLETS ?? '1', 10) || 1;
     const minBuyRatio = parseFloat(process.env.WASH_MIN_BUY_RATIO ?? '0.15') || 0.15;
     const maxBuyRatio = parseFloat(process.env.WASH_MAX_BUY_RATIO ?? '0.99') || 0.99;
     const maxTimingScore = parseFloat(process.env.WASH_MAX_TIMING_SCORE ?? '0.99') || 0.99;
 
-    if (vol.uniqueWalletsPerVolume < minWallets) {
+    if (vol.uniqueWalletsPerVolume > 0 && vol.uniqueWalletsPerVolume < minWallets) {
       logger.debug('MomentumStrategy: low unique wallets per volume — likely wash trading', {
         uniqueWallets: vol.uniqueWalletsPerVolume,
         threshold: minWallets,
@@ -168,7 +172,7 @@ export class MomentumStrategy extends BaseStrategy {
     }
 
     const allowUniformSizes = process.env.WASH_ALLOW_UNIFORM_SIZES === 'true';
-    if (!allowUniformSizes && vol.tradeSizeStdDev < VOLUME_ANOMALY_RULES.tradeSizeVarianceMin && vol.avgTradeSize > 0) {
+    if (!allowUniformSizes && vol.tradeSizeStdDev > 0 && vol.tradeSizeStdDev < VOLUME_ANOMALY_RULES.tradeSizeVarianceMin && vol.avgTradeSize > 0) {
       logger.debug('MomentumStrategy: uniform trade sizes — likely bot volume', {
         stdDev: vol.tradeSizeStdDev,
       });
