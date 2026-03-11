@@ -290,7 +290,7 @@ const SHARED_CAPITAL: CapitalConfig = {
 const SHARED_MOMENTUM: MomentumConfig = {
   strongMomentumVolTrend: 3.5,
   moderateMomentumVolTrend: 2.0,
-  volumeCollapsingThreshold: 0.5,
+  volumeCollapsingThreshold: 0.3, // Relaxado de 0.5 — memecoins com volume em queda moderada podem passar
   absorptionVolTrend: 3.0,
   strongMomentumScoreBoost: 15,
   momentumDecayStage1: parseFloat(process.env.MOMENTUM_DECAY_STAGE1 ?? '-0.25'),
