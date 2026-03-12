@@ -360,11 +360,24 @@ async function main(): Promise<void> {
           const redis = RedisClient.getInstance().getClient();
           await redis.incr('diag:pool_not_found');
         } catch { /* non-critical */ }
-        logger.debug('TOKEN_SCAN: pool não encontrado', {
-          mint: tokenInfo.mintAddress.slice(0, 12),
-          source: payload.source,
-          poolAddress: poolAddress?.slice(0, 12),
-        });
+        // Retry uma vez após 30s — pool pode não estar indexado ainda
+        const poolRetryCount = payload.poolRetryCount ?? 0;
+        if (poolRetryCount < 1 && (poolAddress?.length ?? 0) >= 32) {
+          const retryPayload: TokenScanJobPayload = {
+            ...payload,
+            poolRetryCount: poolRetryCount + 1,
+          };
+          await queueManager.addJob(QueueName.TOKEN_SCAN, 'pool-retry', retryPayload as unknown as Record<string, unknown>, { delay: 30_000 });
+          logger.debug('TOKEN_SCAN: pool não encontrado — retry em 30s', {
+            mint: tokenInfo.mintAddress.slice(0, 12),
+          });
+        } else {
+          logger.debug('TOKEN_SCAN: pool não encontrado', {
+            mint: tokenInfo.mintAddress.slice(0, 12),
+            source: payload.source,
+            poolAddress: poolAddress?.slice(0, 12),
+          });
+        }
         return;
       }
 
@@ -409,10 +422,13 @@ async function main(): Promise<void> {
         const buyTxLast60s = dexVolume.buyTxLast60s ?? buyTxHeuristic;
         const buyTxLast120s = dexVolume.buyTxLast120s ?? Math.round((dexVolume.buyTxLast20 ?? buyTxHeuristic) * 2 / 5);
 
-        // Gate de swap activity: só analisar quando houver primeira atividade de swaps (dados DexScreener)
+        // Gate de swap activity: DexScreener OU bypass por liquidez (estratégias filtram depois)
         const deferCount = payload.deferCount ?? 0;
         const hasSwapActivity = buyTxLast60sGate >= 1 || buyTxLast120sGate >= 3;
-        if (!hasSwapActivity && deferCount < 3) {
+        const minLiqBypass = getTierConfig(tier).entry.minLiquiditySol;
+        const liquidityBypass = pool.liquidity >= minLiqBypass && poolAgeSec >= 30;
+        const canPassSwapGate = hasSwapActivity || liquidityBypass;
+        if (!canPassSwapGate && deferCount < 3) {
           const deferredPayload: TokenScanJobPayload = {
             ...payload,
             deferCount: deferCount + 1,
@@ -430,7 +446,7 @@ async function main(): Promise<void> {
           });
           return;
         }
-        if (!hasSwapActivity && deferCount >= 3) {
+        if (!canPassSwapGate && deferCount >= 3) {
           try {
             const redis = RedisClient.getInstance().getClient();
             await redis.incr('diag:swap_gate_dropped');

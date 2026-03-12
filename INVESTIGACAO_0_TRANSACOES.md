@@ -182,4 +182,7 @@ Quando `tokens_received` é 0 mas há atividade em `pool_not_found`, `swap_gate_
 
 **Ajustes implementados:**
 - Swap gate: defer máximo aumentado de 2 para **3** (3 min para DexScreener indexar)
+- **Swap gate bypass**: quando pool tem liquidez ≥ minLiquiditySol (tier) e pool_age ≥ 30s, passa sem DexScreener
+- **Pool retry**: quando pool_not_found, retry 1x após 30s (pool pode não estar indexado)
+- **Filtros institucionais relaxados**: bundle 5 wallets, insider 6 dos primeiros 10, dev cluster 4 holders
 - Novas métricas: `tokens_pool_found`, `tokens_passed_swap_gate` no dashboard
