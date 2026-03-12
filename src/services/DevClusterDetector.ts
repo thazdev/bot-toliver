@@ -21,8 +21,8 @@ import { RedisClient } from '../core/cache/RedisClient.js';
 
 const TOP_HOLDERS_LIMIT = 10;
 const MAX_TXS_PER_HOLDER = 8;
-const INSIDER_FUNDING_THRESHOLD = 4;
-const DEV_CLUSTER_SLOT_THRESHOLD = 5;
+const INSIDER_FUNDING_THRESHOLD = 3;
+const DEV_CLUSTER_SLOT_THRESHOLD = 4;
 const SLOT_WINDOW = 3;
 const HOT_WALLET_TX_THRESHOLD = 1000;
 const CACHE_TTL_SEC = 120;

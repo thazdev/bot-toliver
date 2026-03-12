@@ -16,10 +16,10 @@ import type { PoolInfo } from '../types/pool.types.js';
 
 const MAX_SWAPS_TO_ANALYZE = 15;
 const MAX_SIGNATURES_TO_FETCH = 40;
-const BUNDLE_THRESHOLD_WALLETS = 5;
+const BUNDLE_THRESHOLD_WALLETS = 4;
 const BUNDLE_THRESHOLD_SLOT_DIFF = 1;
 const BUNDLE_TEMPORAL_WINDOW_SEC = 2;
-const INSIDER_THRESHOLD_FIRST_10 = 6;
+const INSIDER_THRESHOLD_FIRST_10 = 5;
 
 export interface SwapRecord {
   wallet: string;

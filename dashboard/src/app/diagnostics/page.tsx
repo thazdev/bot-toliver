@@ -288,18 +288,16 @@ export default function DiagnosticsPage() {
                 { label: 'Conta não encontrada', value: data.pipeline.pre_pipeline?.scanner_skip_account_not_found },
                 { label: 'Erro scanner', value: data.pipeline.pre_pipeline?.scanner_skip_error },
                 { label: 'Pool não encontrado', value: data.pipeline.pre_pipeline?.pool_not_found },
-                { label: 'Pool encontrado', value: data.pipeline.pre_pipeline?.tokens_pool_found, positive: true },
                 { label: 'Swap gate: defer', value: data.pipeline.pre_pipeline?.swap_gate_deferred },
                 { label: 'Swap gate: drop', value: data.pipeline.pre_pipeline?.swap_gate_dropped },
-                { label: 'Passou swap gate', value: data.pipeline.pre_pipeline?.tokens_passed_swap_gate, positive: true },
                 { label: 'Filtro institucional', value: data.pipeline.pre_pipeline?.institutional_filtered },
               ].filter(item => (item.value ?? 0) > 0 || true).map((item) => (
                 <div
                   key={item.label}
-                  className={`rounded-lg border px-3 py-2 text-xs ${(item as { positive?: boolean }).positive ? 'border-success/30 bg-success/5' : 'border-card-border bg-white/5'}`}
+                  className="rounded-lg border border-card-border bg-white/5 px-3 py-2 text-xs"
                 >
                   <span className="text-slate-400">{item.label}:</span>{' '}
-                  <span className={`font-semibold ${(item.value ?? 0) > 0 ? ((item as { positive?: boolean }).positive ? 'text-success' : 'text-warning') : 'text-slate-500'}`}>{item.value ?? 0}</span>
+                  <span className={`font-semibold ${(item.value ?? 0) > 0 ? 'text-warning' : 'text-slate-500'}`}>{item.value ?? 0}</span>
                 </div>
               ))}
             </div>
