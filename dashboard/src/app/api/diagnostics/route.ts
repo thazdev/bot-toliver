@@ -35,8 +35,10 @@ export interface DiagnosticsResponse {
       scanner_skip_account_not_found: number;
       scanner_skip_error: number;
       pool_not_found: number;
+      tokens_pool_found: number;
       swap_gate_deferred: number;
       swap_gate_dropped: number;
+      tokens_passed_swap_gate: number;
       institutional_filtered: number;
     };
     signal_stack: {
@@ -91,7 +93,8 @@ export async function GET() {
             logs_no_token: 0, listener_liquidity_below: 0,
             scanner_skip_cache: 0, scanner_skip_no_mint: 0,
             scanner_skip_account_not_found: 0, scanner_skip_error: 0,
-            pool_not_found: 0, swap_gate_deferred: 0, swap_gate_dropped: 0,
+            pool_not_found: 0, tokens_pool_found: 0,
+            swap_gate_deferred: 0, swap_gate_dropped: 0, tokens_passed_swap_gate: 0,
             institutional_filtered: 0,
           },
           signal_stack: { evaluated: 0, passed: 0, failed: 0, fail_reasons: {} },
@@ -121,8 +124,10 @@ export async function GET() {
       scanner_skip_account_not_found: 0,
       scanner_skip_error: 0,
       pool_not_found: 0,
+      tokens_pool_found: 0,
       swap_gate_deferred: 0,
       swap_gate_dropped: 0,
+      tokens_passed_swap_gate: 0,
       institutional_filtered: 0,
     },
     signal_stack: { evaluated: 0, passed: 0, failed: 0, fail_reasons: {} },
@@ -153,8 +158,10 @@ export async function GET() {
   pipeline.pre_pipeline.scanner_skip_account_not_found = await getInt('diag:scanner_skip:account_not_found');
   pipeline.pre_pipeline.scanner_skip_error = await getInt('diag:scanner_skip:error');
   pipeline.pre_pipeline.pool_not_found = await getInt('diag:pool_not_found');
+  pipeline.pre_pipeline.tokens_pool_found = await getInt('diag:tokens_pool_found');
   pipeline.pre_pipeline.swap_gate_deferred = await getInt('diag:swap_gate_deferred');
   pipeline.pre_pipeline.swap_gate_dropped = await getInt('diag:swap_gate_dropped');
+  pipeline.pre_pipeline.tokens_passed_swap_gate = await getInt('diag:tokens_passed_swap_gate');
   pipeline.pre_pipeline.institutional_filtered = await getInt('diag:institutional_filtered');
 
   // Signal Stack counters

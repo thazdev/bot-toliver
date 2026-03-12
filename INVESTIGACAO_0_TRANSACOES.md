@@ -162,3 +162,24 @@ getBestBuySignal() → null → no_buy_signal
 
 O tier padrão é `conservative` (`src/config/index.ts`).  
 Confirme no Railway se `STRATEGY_TIER` está definido. Se não estiver, o bot usa conservative (5 SOL, top holder 30%).
+
+---
+
+## 7. tokens_received = 0 — Diagnóstico Adicional (2026-03-11)
+
+Quando `tokens_received` é 0 mas há atividade em `pool_not_found`, `swap_gate_deferred`, `institutional_filtered`:
+
+**O que significa:** Tokens **estão** sendo detectados e processados. Nenhum passou todos os gates (pool + swap + institucional).
+
+**Funil típico:**
+- `scanner_skip_cache` + `scanner_skip_no_mint` — jobs ignorados antes do pool scan
+- `pool_not_found` — pool não encontrado (RPC/lag ou token ainda na bonding curve)
+- `tokens_pool_found` — pool encontrado (nova métrica)
+- `swap_gate_deferred` — DexScreener ainda sem dados de swap (token muito novo)
+- `tokens_passed_swap_gate` — passou o gate de swap (nova métrica)
+- `institutional_filtered` — bundle ou dev cluster detectado
+- `tokens_received` — passou tudo e entrou no pipeline
+
+**Ajustes implementados:**
+- Swap gate: defer máximo aumentado de 2 para **3** (3 min para DexScreener indexar)
+- Novas métricas: `tokens_pool_found`, `tokens_passed_swap_gate` no dashboard

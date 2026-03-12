@@ -369,6 +369,10 @@ async function main(): Promise<void> {
       }
 
       tokensInPipeline++;
+      try {
+        const redis = RedisClient.getInstance().getClient();
+        await redis.incr('diag:tokens_pool_found');
+      } catch { /* non-critical */ }
       const now = Date.now();
       if (now - lastPipelineSummaryAt > 30_000) {
         lastPipelineSummaryAt = now;
@@ -408,7 +412,7 @@ async function main(): Promise<void> {
         // Gate de swap activity: só analisar quando houver primeira atividade de swaps (dados DexScreener)
         const deferCount = payload.deferCount ?? 0;
         const hasSwapActivity = buyTxLast60sGate >= 1 || buyTxLast120sGate >= 3;
-        if (!hasSwapActivity && deferCount < 2) {
+        if (!hasSwapActivity && deferCount < 3) {
           const deferredPayload: TokenScanJobPayload = {
             ...payload,
             deferCount: deferCount + 1,
@@ -426,16 +430,21 @@ async function main(): Promise<void> {
           });
           return;
         }
-        if (!hasSwapActivity && deferCount >= 2) {
+        if (!hasSwapActivity && deferCount >= 3) {
           try {
             const redis = RedisClient.getInstance().getClient();
             await redis.incr('diag:swap_gate_dropped');
           } catch { /* non-critical */ }
-          logger.debug('TOKEN_SCAN: ignorado após 2 defers — sem swap activity', {
+          logger.debug('TOKEN_SCAN: ignorado após 3 defers — sem swap activity', {
             mint: tokenInfo.mintAddress.slice(0, 12),
           });
           return;
         }
+
+        try {
+          const redis = RedisClient.getInstance().getClient();
+          await redis.incr('diag:tokens_passed_swap_gate');
+        } catch { /* non-critical */ }
 
         // Filtros institucionais (Bundle Launch + Dev Cluster) — antes do Signal Stack
         const instRiskResult = await institutionalRiskFilters.run(
